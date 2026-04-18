@@ -68,8 +68,16 @@ spl_autoload_register(
 		$parts    = explode( '\\', $relative );
 		$class_nm = array_pop( $parts );
 
-		$dir = $parts === [] ? '' : strtolower( implode( '/', $parts ) ) . '/';
-		$file = {{PLUGIN_CONST}}_PATH . 'includes/' . $dir . 'class-' . str_replace( '_', '-', strtolower( $class_nm ) ) . '.php';
+		// PascalCase or Snake_Case → kebab-case for filesystem paths.
+		$kebab = static function ( string $s ): string {
+			$s = (string) preg_replace( '/(?<!^)([A-Z])/', '-$1', $s );
+			$s = str_replace( '_', '-', $s );
+			$s = (string) preg_replace( '/-+/', '-', $s );
+			return strtolower( $s );
+		};
+
+		$dir  = $parts === [] ? '' : implode( '/', array_map( $kebab, $parts ) ) . '/';
+		$file = {{PLUGIN_CONST}}_PATH . 'includes/' . $dir . 'class-' . $kebab( $class_nm ) . '.php';
 
 		if ( file_exists( $file ) ) {
 			require_once $file;
