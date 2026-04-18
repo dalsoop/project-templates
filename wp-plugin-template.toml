@@ -1,0 +1,85 @@
+# Template manifest. Mirrors `cargo-generate.toml` in spirit.
+# Documents every placeholder the generator script substitutes.
+
+[template]
+name = "wp-plugin-template"
+description = "Modern WordPress plugin scaffold — modular architecture, REST API, Gutenberg sidebar, GPL-2.0+."
+license = "GPL-2.0-or-later"
+
+# Placeholders the user supplies (or `bin/instantiate.sh` derives).
+[placeholders.PLUGIN_NAME]
+type = "string"
+prompt = "Plugin display name"
+example = "SEO for Korean"
+required = true
+
+[placeholders.PLUGIN_SLUG]
+type = "string"
+prompt = "URL slug + text domain (lowercase, hyphenated)"
+derived_from = "PLUGIN_NAME"
+regex = "^[a-z][a-z0-9-]{1,40}[a-z0-9]$"
+example = "seo-for-korean"
+
+[placeholders.PLUGIN_PREFIX]
+type = "string"
+prompt = "Function/option prefix (lowercase, 2-6 chars)"
+derived_from = "PLUGIN_SLUG"
+regex = "^[a-z][a-z0-9_]{1,5}$"
+example = "sfk"
+
+[placeholders.PLUGIN_NAMESPACE]
+type = "string"
+prompt = "PHP namespace (PascalCase)"
+derived_from = "PLUGIN_NAME"
+regex = "^[A-Z][A-Za-z0-9_]+$"
+example = "SEOForKorean"
+
+[placeholders.PLUGIN_CONST]
+type = "string"
+prompt = "Constant prefix (uppercase)"
+derived_from = "PLUGIN_PREFIX"
+regex = "^[A-Z][A-Z0-9_]+$"
+example = "SFK"
+
+[placeholders.PLUGIN_DESCRIPTION]
+type = "string"
+prompt = "One-line description"
+default = "A WordPress plugin."
+
+[placeholders.PLUGIN_VERSION]
+type = "string"
+default = "0.1.0"
+regex = "^\\d+\\.\\d+\\.\\d+$"
+
+[placeholders.AUTHOR_NAME]
+type = "string"
+prompt = "Author display name"
+default = "Your Name"
+
+[placeholders.AUTHOR_URI]
+type = "string"
+prompt = "Author homepage URL"
+default = "https://example.com"
+
+[placeholders.PLUGIN_URI]
+type = "string"
+prompt = "Plugin homepage URL"
+derived_from = "AUTHOR_URI"
+
+[placeholders.COMPOSER_VENDOR]
+type = "string"
+prompt = "Composer vendor name (lowercase)"
+default = "vendor"
+regex = "^[a-z0-9_-]+$"
+
+[placeholders.MIN_PHP]
+type = "string"
+default = "8.0"
+
+[placeholders.MIN_WP]
+type = "string"
+default = "6.0"
+
+[placeholders.YEAR]
+type = "auto"
+source = "current_year"
