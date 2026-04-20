@@ -10,6 +10,7 @@ Ren'Py 프로젝트의 최소 실행 골격만 남겨둔 상태다.
 - 캐릭터 스프라이트 넣기: `game/images/characters/`
 - CG 넣기: `game/images/cg/`
 - 배경음/효과음 넣기: `game/audio/`
+- 커맨드/LLM 브리지 작업: `tools/`, `config/bridge/`
 
 ## 지금은 건드리지 않기
 
@@ -33,6 +34,8 @@ Ren'Py 프로젝트의 최소 실행 골격만 남겨둔 상태다.
 - 한글 폰트는 Pretendard로 연결
 - 기본 GUI와 스크린만 유지
 - Ren'Py SDK는 `/Users/jeonghan/Documents/tools/renpy-8.5.2-sdk/`에 분리
+- 저장 경로, About 문구, 윈도우 아이콘, 오디오 플래그, 기본 배포 제외 규칙 설정 완료
+- `jsonargparse` 기반 Python 브리지 레이어 추가
 
 ## 폴더 구조
 
@@ -59,6 +62,19 @@ game/
     ├── 00_start.rpy
     ├── 10_prologue.rpy
     └── 20_chapter_01.rpy
+```
+
+```text
+config/
+└── bridge/
+    ├── registry.yaml
+    └── state.example.yaml
+
+tools/
+└── bridge_cli/
+    ├── cli.py
+    ├── contracts.py
+    └── registry.py
 ```
 
 정리 기준:
@@ -90,6 +106,32 @@ game/
 cd "/Users/jeonghan/Documents/tools/renpy-8.5.2-sdk"
 ./renpy.sh "/Users/jeonghan/Documents/가야의연결점" lint
 ./renpy.sh "/Users/jeonghan/Documents/가야의연결점" compile
+```
+
+## Python 브리지
+
+설치:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python3 -m pip install -e .
+```
+
+주요 커맨드:
+
+```bash
+scripts/bridge doctor
+scripts/bridge validate-config
+scripts/bridge render-prompt --command-id generate_scene
+scripts/bridge generate-scene --command-id generate_scene --stdout
+```
+
+실제 OpenAI 연동:
+
+```bash
+export OPENAI_API_KEY="..."
+scripts/bridge generate-scene --command-id generate_scene --provider openai
 ```
 
 런처 앱:

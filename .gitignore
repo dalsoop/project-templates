@@ -7,3 +7,10 @@ game/**/*.bak
 log.txt
 errors.txt
 traceback.txt
+.venv/
+__pycache__/
+*.egg-info/
+runtime/output/*
+!runtime/output/.gitkeep
+runtime/prompts/*
+!runtime/prompts/.gitkeep
