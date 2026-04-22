@@ -1,5 +1,5 @@
 import type { RuleProfile, RuleStore, StoredRule } from "../shared/types.js";
-import { createProfile, deleteProfile, moveProfile, normalizeStore, renameProfile, setProfileMatchers, writeStore } from "../shared/storage.js";
+import { createProfile, deleteProfile, findMatchingProfile, moveProfile, normalizeStore, renameProfile, setProfileMatchers, writeStore } from "../shared/storage.js";
 
 const STORAGE_KEY = "infocutter.ruleStore";
 
@@ -10,6 +10,9 @@ const toggleGlobalButton = document.getElementById("toggle-global-button");
 const newProfileName = document.getElementById("new-profile-name");
 const newProfileMatcher = document.getElementById("new-profile-matcher");
 const createProfileButton = document.getElementById("create-profile-button");
+const urlTestInput = document.getElementById("url-test-input");
+const urlTestButton = document.getElementById("url-test-button");
+const urlTestResult = document.getElementById("url-test-result");
 const globalStatus = document.getElementById("global-status");
 const summary = document.getElementById("summary");
 const siteList = document.getElementById("site-list");
@@ -30,6 +33,9 @@ const toggleGlobalButtonElement = assertElement(toggleGlobalButton, "toggle-glob
 const newProfileNameElement = assertElement(newProfileName, "new-profile-name") as HTMLInputElement;
 const newProfileMatcherElement = assertElement(newProfileMatcher, "new-profile-matcher") as HTMLInputElement;
 const createProfileButtonElement = assertElement(createProfileButton, "create-profile-button") as HTMLButtonElement;
+const urlTestInputElement = assertElement(urlTestInput, "url-test-input") as HTMLInputElement;
+const urlTestButtonElement = assertElement(urlTestButton, "url-test-button") as HTMLButtonElement;
+const urlTestResultElement = assertElement(urlTestResult, "url-test-result") as HTMLParagraphElement;
 const globalStatusElement = assertElement(globalStatus, "global-status") as HTMLParagraphElement;
 const summaryElement = assertElement(summary, "summary") as HTMLParagraphElement;
 const siteListElement = assertElement(siteList, "site-list") as HTMLDivElement;
@@ -296,6 +302,18 @@ async function render(): Promise<void> {
   siteListElement.replaceChildren(...profileCards);
   emptyStateElement.hidden = profileCards.length > 0;
   summaryElement.textContent = `표시 중인 프로필 ${profileCards.length}개 / 규칙 ${totalVisibleRules}개`;
+
+  const testUrl = urlTestInputElement.value.trim();
+  if (testUrl) {
+    try {
+      const matchedProfile = findMatchingProfile(store, testUrl);
+      urlTestResultElement.textContent = matchedProfile
+        ? `매칭 결과: ${matchedProfile.name} (${matchedProfile.matchers.join(", ")})`
+        : "매칭 결과: 일치하는 프로필이 없습니다.";
+    } catch {
+      urlTestResultElement.textContent = "매칭 결과: URL 형식이 올바르지 않습니다.";
+    }
+  }
 }
 
 refreshButtonElement.addEventListener("click", () => {
@@ -322,6 +340,19 @@ createProfileButtonElement.addEventListener("click", () => {
     newProfileMatcherElement.value = "";
     await render();
   })();
+});
+
+urlTestButtonElement.addEventListener("click", () => {
+  void render();
+});
+
+urlTestInputElement.addEventListener("input", () => {
+  if (!urlTestInputElement.value.trim()) {
+    urlTestResultElement.textContent = "테스트할 URL을 입력하면 현재 우선순위 기준으로 어떤 프로필이 적용되는지 보여줍니다.";
+    return;
+  }
+
+  void render();
 });
 
 searchInputElement.addEventListener("input", () => {
