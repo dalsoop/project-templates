@@ -14,6 +14,7 @@ async function main() {
   const manifest = JSON.parse(rawManifest);
 
   manifest.background.service_worker = "src/background/service-worker.js";
+  manifest.options_page = "options.html";
   manifest.action.default_popup = "popup.html";
   manifest.action.default_icon = {
     "16": "icons/icon-16.png",

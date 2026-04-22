@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>인포커터 관리</title>
+    <link rel="stylesheet" href="./options.css" />
+  </head>
+  <body>
+    <main class="options">
+      <header class="options__header">
+        <p class="options__eyebrow">인포커터 관리자</p>
+        <h1 class="options__title">규칙 관리</h1>
+      </header>
+
+      <section class="options__toolbar">
+        <input id="search-input" class="options__input" type="search" placeholder="사이트 또는 선택자 검색" />
+        <select id="scope-filter" class="options__select">
+          <option value="all">전체 규칙</option>
+          <option value="main">메인 문서 규칙</option>
+          <option value="iframe">iframe 규칙</option>
+        </select>
+        <button id="refresh-button" type="button">새로고침</button>
+        <button id="toggle-global-button" type="button" class="options__secondary">전체 끄기</button>
+      </section>
+
+      <section class="options__status-card">
+        <p id="global-status" class="options__meta">전역 상태를 불러오는 중...</p>
+        <p id="summary" class="options__meta">규칙 통계를 불러오는 중...</p>
+      </section>
+
+      <section class="options__list-wrap">
+        <div id="site-list" class="options__site-list"></div>
+        <p id="empty-state" class="options__empty">조건에 맞는 규칙이 없습니다.</p>
+      </section>
+    </main>
+    <script type="module" src="src/options/index.js"></script>
+  </body>
+</html>

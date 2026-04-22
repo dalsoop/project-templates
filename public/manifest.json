@@ -16,6 +16,7 @@
     "service_worker": "src/background/service-worker.js",
     "type": "module"
   },
+  "options_page": "options.html",
   "action": {
     "default_title": "인포커터",
     "default_popup": "public/popup.html",

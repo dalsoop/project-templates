@@ -9,6 +9,7 @@ const status = document.getElementById("status");
 const pickButton = document.getElementById("pick-button");
 const toggleSiteButton = document.getElementById("toggle-site-button");
 const toggleGlobalButton = document.getElementById("toggle-global-button");
+const manageButton = document.getElementById("manage-button");
 const refreshButton = document.getElementById("refresh-button");
 const clearButton = document.getElementById("clear-button");
 const ruleList = document.getElementById("rule-list");
@@ -32,6 +33,7 @@ const statusElement = assertElement(status, "status");
 const pickButtonElement = assertElement(pickButton, "pick-button") as HTMLButtonElement;
 const toggleSiteButtonElement = assertElement(toggleSiteButton, "toggle-site-button") as HTMLButtonElement;
 const toggleGlobalButtonElement = assertElement(toggleGlobalButton, "toggle-global-button") as HTMLButtonElement;
+const manageButtonElement = assertElement(manageButton, "manage-button") as HTMLButtonElement;
 const refreshButtonElement = assertElement(refreshButton, "refresh-button") as HTMLButtonElement;
 const clearButtonElement = assertElement(clearButton, "clear-button") as HTMLButtonElement;
 const ruleListElement = assertElement(ruleList, "rule-list") as HTMLUListElement;
@@ -179,21 +181,34 @@ async function mutateContentScript<T>(type: string, payload?: MessagePayload): P
   return response.data as T;
 }
 
+function frameScopeLabel(frameScope: string | null): string {
+  if (!frameScope) {
+    return "메인 문서 규칙";
+  }
+
+  try {
+    const url = new URL(frameScope);
+    return `iframe 규칙: ${url.hostname}${url.pathname}`;
+  } catch {
+    return `iframe 규칙: ${frameScope}`;
+  }
+}
+
 function buildRuleList(state: ActiveSiteState): void {
-  const items = state.rules.map((rule) => {
+  const mainRules = state.rules.filter((rule) => rule.frameScope === null);
+  const iframeRules = state.rules.filter((rule) => rule.frameScope !== null);
+
+  const createRuleItem = (rule: ActiveSiteState["rules"][number]): HTMLLIElement => {
     const item = document.createElement("li");
     item.className = "popup__rule-item";
+
+    const scopeText = document.createElement("div");
+    scopeText.className = "popup__meta";
+    scopeText.textContent = frameScopeLabel(rule.frameScope);
 
     const selectorText = document.createElement("code");
     selectorText.className = "popup__rule-selector";
     selectorText.textContent = rule.selector;
-
-    if (rule.frameScope) {
-      const scopeText = document.createElement("div");
-      scopeText.className = "popup__meta";
-      scopeText.textContent = `iframe 범위: ${rule.frameScope}`;
-      item.append(scopeText);
-    }
 
     const removeButton = document.createElement("button");
     removeButton.type = "button";
@@ -212,9 +227,31 @@ function buildRuleList(state: ActiveSiteState): void {
       });
     });
 
-    item.append(selectorText, removeButton);
+    item.append(scopeText, selectorText, removeButton);
     return item;
-  });
+  };
+
+  const items: HTMLElement[] = [];
+
+  const appendSection = (title: string, rules: ActiveSiteState["rules"]): void => {
+    if (rules.length === 0) {
+      return;
+    }
+
+    const sectionTitle = document.createElement("li");
+    sectionTitle.className = "popup__rule-item";
+    sectionTitle.style.background = "rgba(35, 31, 23, 0.06)";
+    sectionTitle.style.fontWeight = "700";
+    sectionTitle.textContent = title;
+    items.push(sectionTitle);
+
+    for (const rule of rules) {
+      items.push(createRuleItem(rule));
+    }
+  };
+
+  appendSection("메인 문서 규칙", mainRules);
+  appendSection("iframe 규칙", iframeRules);
 
   ruleListElement.replaceChildren(...items);
   emptyStateElement.hidden = items.length > 0;
@@ -268,6 +305,10 @@ debugButtonElement.addEventListener("click", () => {
   void runDiagnostics().catch((error: unknown) => {
     debugSummaryElement.textContent = error instanceof Error ? error.message : "진단 실행에 실패했습니다.";
   });
+});
+
+manageButtonElement.addEventListener("click", () => {
+  void chrome.runtime.openOptionsPage();
 });
 
 toggleSiteButtonElement.addEventListener("click", () => {
