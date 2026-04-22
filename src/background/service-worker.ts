@@ -87,9 +87,11 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
     return;
   }
 
+  const tabId = tab.id;
+
   if (info.menuItemId === contextMenuIds.hideTarget) {
-    void ensureContentScript(tab.id)
-      .then(async () => sendTabMessage(tab.id, messageTypes.hideLastContextTarget))
+    void ensureContentScript(tabId)
+      .then(async () => sendTabMessage(tabId, messageTypes.hideLastContextTarget))
       .catch((error: unknown) => {
       console.warn("인포커터 우클릭 숨기기에 실패했습니다", error);
     });
@@ -97,8 +99,8 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
   }
 
   if (info.menuItemId === contextMenuIds.startPicker) {
-    void ensureContentScript(tab.id)
-      .then(async () => sendTabMessage(tab.id, messageTypes.startPicker))
+    void ensureContentScript(tabId)
+      .then(async () => sendTabMessage(tabId, messageTypes.startPicker))
       .catch((error: unknown) => {
       console.warn("인포커터 선택 모드 시작에 실패했습니다", error);
     });
