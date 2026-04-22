@@ -1544,7 +1544,7 @@ function buildPreviewPanel(
   panel.style.position = "fixed";
   panel.style.right = "16px";
   panel.style.bottom = "64px";
-  panel.style.width = "320px";
+  panel.style.width = "360px";
   panel.style.padding = "12px";
   panel.style.background = "#231f17";
   panel.style.color = "#f7f4eb";
@@ -1584,7 +1584,7 @@ function buildPreviewPanel(
   const candidateList = document.createElement("div");
   candidateList.style.display = "grid";
   candidateList.style.gap = "6px";
-  candidateList.style.maxHeight = "160px";
+  candidateList.style.maxHeight = "190px";
   candidateList.style.overflow = "auto";
 
   const candidateSections = [
@@ -1788,7 +1788,7 @@ function buildPreviewPanel(
   const selectorDetailsList = document.createElement("div");
   selectorDetailsList.style.display = "grid";
   selectorDetailsList.style.gap = "6px";
-  selectorDetailsList.style.maxHeight = "180px";
+  selectorDetailsList.style.maxHeight = "210px";
   selectorDetailsList.style.overflow = "auto";
 
   for (const [candidateIndex, candidateSelector] of selectorCandidates.entries()) {
@@ -1848,43 +1848,50 @@ function buildPreviewPanel(
 
   selectorDetails.append(selectorDetailsTitle, selectorDetailsGuide, selectorDetailsList);
 
-  const actions = document.createElement("div");
-  actions.style.display = "flex";
-  actions.style.gap = "8px";
-  actions.style.flexWrap = "wrap";
+  const primaryActions = document.createElement("div");
+  primaryActions.style.display = "grid";
+  primaryActions.style.gridTemplateColumns = "1fr 1fr";
+  primaryActions.style.gap = "8px";
+  primaryActions.style.marginBottom = "8px";
 
   const addCardButton = document.createElement("button");
   addCardButton.type = "button";
-  addCardButton.textContent = "카드에 추가";
-  addCardButton.style.flex = "1";
+  addCardButton.textContent = "카드에 담기";
+  addCardButton.style.gridColumn = "1 / -1";
 
   const refreshButton = document.createElement("button");
   refreshButton.type = "button";
-  refreshButton.textContent = "선택자 갱신";
-  refreshButton.style.flex = "1";
+  refreshButton.textContent = "선택자 다시 읽기";
+
+  const rangeActions = document.createElement("div");
+  rangeActions.style.display = "grid";
+  rangeActions.style.gridTemplateColumns = "1fr 1fr 1fr";
+  rangeActions.style.gap = "8px";
+  rangeActions.style.marginBottom = "8px";
 
   const narrowButton = document.createElement("button");
   narrowButton.type = "button";
-  narrowButton.textContent = "더 좁게";
+  narrowButton.textContent = "대상 좁히기";
   narrowButton.disabled = depthIndex === 0;
-  narrowButton.style.flex = "1";
 
   const nextButton = document.createElement("button");
   nextButton.type = "button";
-  nextButton.textContent = selectorCandidates.length > 1 ? "다른 선택자" : "다른 선택자 없음";
+  nextButton.textContent = selectorCandidates.length > 1 ? "다음 선택자" : "후보 없음";
   nextButton.disabled = selectorCandidates.length <= 1;
-  nextButton.style.flex = "1";
 
   const widerButton = document.createElement("button");
   widerButton.type = "button";
-  widerButton.textContent = "더 넓게";
+  widerButton.textContent = "대상 넓히기";
   widerButton.disabled = depthIndex >= depthTotal - 1;
-  widerButton.style.flex = "1";
+
+  const secondaryActions = document.createElement("div");
+  secondaryActions.style.display = "grid";
+  secondaryActions.style.gridTemplateColumns = "1fr";
+  secondaryActions.style.gap = "8px";
 
   const cancelButton = document.createElement("button");
   cancelButton.type = "button";
-  cancelButton.textContent = "취소";
-  cancelButton.style.flex = "1";
+  cancelButton.textContent = "패널 닫기";
 
   for (const button of [addCardButton, refreshButton, narrowButton, nextButton, widerButton, cancelButton]) {
     button.style.border = "1px solid #f7f4eb";
@@ -1892,6 +1899,7 @@ function buildPreviewPanel(
     button.style.color = "#f7f4eb";
     button.style.padding = "8px 10px";
     button.style.cursor = "pointer";
+    button.style.whiteSpace = "nowrap";
   }
 
   const updatePreview = (): void => {
@@ -1945,8 +1953,24 @@ function buildPreviewPanel(
   cancelButton.addEventListener("click", onCancel);
   input.addEventListener("input", updatePreview);
 
-  actions.append(addCardButton, refreshButton, narrowButton, nextButton, widerButton, cancelButton);
-  panel.append(title, meta, depthMeta, candidateSection, breadcrumb, qualityMeta, assistMeta, cardNameInput, input, selectorDetails, actions);
+  primaryActions.append(addCardButton, refreshButton);
+  rangeActions.append(narrowButton, nextButton, widerButton);
+  secondaryActions.append(cancelButton);
+  panel.append(
+    title,
+    meta,
+    depthMeta,
+    candidateSection,
+    breadcrumb,
+    qualityMeta,
+    assistMeta,
+    cardNameInput,
+    input,
+    selectorDetails,
+    primaryActions,
+    rangeActions,
+    secondaryActions
+  );
   document.documentElement.append(panel);
   updatePreview();
   return panel;
