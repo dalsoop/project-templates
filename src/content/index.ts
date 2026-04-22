@@ -1589,8 +1589,8 @@ function buildPreviewPanel(
 
   const candidateSections = [
     { label: "현재 타깃", match: (candidate: Element) => candidate === currentTarget },
-    { label: "부모 후보", match: (candidate: Element) => candidate.contains(currentTarget) && candidate !== currentTarget },
     { label: "자식 후보", match: (candidate: Element) => currentTarget.contains(candidate) && candidate !== currentTarget },
+    { label: "부모 후보", match: (candidate: Element) => candidate.contains(currentTarget) && candidate !== currentTarget },
     { label: "대체 후보", match: (candidate: Element) => candidateRelationshipLabel(candidate, currentTarget) === "대체 후보" }
   ] as const;
 
@@ -1703,7 +1703,7 @@ function buildPreviewPanel(
     }
 
     const sectionTitle = document.createElement("div");
-    sectionTitle.textContent = section.label;
+    sectionTitle.textContent = `${section.label} ${sectionCandidates.length}개`;
     sectionTitle.style.marginTop = "4px";
     sectionTitle.style.marginBottom = "4px";
     sectionTitle.style.fontWeight = "700";
