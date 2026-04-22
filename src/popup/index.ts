@@ -116,7 +116,7 @@ async function ensureContentScript(tabId: number): Promise<void> {
 async function pingContentScript(tabId: number): Promise<boolean> {
   try {
     const response = await sendMessageToTab(tabId, messageTypes.ping);
-    return response.ok === true;
+    return response.ok;
   } catch {
     return false;
   }
