@@ -236,7 +236,7 @@ function hostnameFromUrl(url: string): string {
 
 function hostnameMatcher(url: string): string {
   const parsed = new URL(url);
-  return `${parsed.protocol}//${parsed.hostname}/*`;
+  return `${parsed.origin}/*`;
 }
 
 function matcherToRegExp(matcher: string): RegExp {
@@ -921,6 +921,7 @@ function removePickerArtifacts(): void {
   document.getElementById(PICKER_STATUS_BADGE_ID)?.remove();
   document.getElementById(PICKER_PREVIEW_PANEL_ID)?.remove();
   document.getElementById(PICKER_PREVIEW_STYLE_ID)?.remove();
+  document.getElementById(PICKER_SESSION_PANEL_ID)?.remove();
   document.getElementById(PICKER_SESSION_OVERLAY_ID)?.remove();
   document.documentElement.style.cursor = "";
 }
@@ -1379,9 +1380,13 @@ function candidateKindLabel(element: Element): string {
   return "컨테이너";
 }
 
-function buildSessionPanel(onDone: () => void, onCancel: () => void): HTMLDivElement {
+function buildSessionPanel(onDone: () => void, onCancel: () => void): HTMLDivElement | null {
   document.getElementById(PICKER_SESSION_PANEL_ID)?.remove();
   applySelectionSessionHighlights();
+
+  if (selectionSession.length === 0) {
+    return null;
+  }
 
   const panel = document.createElement("div");
   panel.id = PICKER_SESSION_PANEL_ID;
@@ -1544,7 +1549,7 @@ function buildPreviewPanel(
   panel.style.position = "fixed";
   panel.style.right = "16px";
   panel.style.bottom = "64px";
-  panel.style.width = "360px";
+  panel.style.width = "340px";
   panel.style.padding = "12px";
   panel.style.background = "#231f17";
   panel.style.color = "#f7f4eb";
@@ -1558,25 +1563,27 @@ function buildPreviewPanel(
   title.style.marginBottom = "8px";
 
   const meta = document.createElement("div");
-  meta.textContent = `${depthLabel(depthIndex)} · 현재 선택자를 확인하는 중입니다.`;
+  meta.textContent = `${depthLabel(depthIndex)} · 이 selector로 숨길 범위를 확인합니다.`;
   meta.style.marginBottom = "8px";
   meta.style.color = "#f5d6b0";
 
   const depthMeta = document.createElement("div");
-  depthMeta.textContent = `범위 단계 ${depthIndex + 1}/${depthTotal}`;
+  depthMeta.textContent = `범위 ${depthIndex + 1}/${depthTotal}`;
   depthMeta.style.marginBottom = "8px";
   depthMeta.style.color = "#c9ba9c";
 
-  const candidateSection = document.createElement("div");
+  const candidateSection = document.createElement("details");
   candidateSection.style.marginBottom = "10px";
+  candidateSection.open = hoverCandidates.length <= 2;
 
-  const candidateTitle = document.createElement("div");
+  const candidateTitle = document.createElement("summary");
   candidateTitle.textContent = `포인터 후보 ${hoverCandidateIndex + 1}/${hoverCandidates.length}`;
   candidateTitle.style.fontWeight = "700";
   candidateTitle.style.marginBottom = "6px";
+  candidateTitle.style.cursor = "pointer";
 
   const candidateGuide = document.createElement("div");
-  candidateGuide.textContent = "클릭 순간의 후보 스택입니다. 원하는 오브젝트를 눌러 고정하세요.";
+  candidateGuide.textContent = "필요할 때 펼쳐서 원하는 오브젝트를 고정하세요.";
   candidateGuide.style.marginBottom = "8px";
   candidateGuide.style.color = "#c9ba9c";
   candidateGuide.style.lineHeight = "1.45";
@@ -1771,16 +1778,18 @@ function buildPreviewPanel(
   input.style.marginBottom = "10px";
   input.style.font = '12px "SF Mono", "IBM Plex Mono", ui-monospace, monospace';
 
-  const selectorDetails = document.createElement("div");
+  const selectorDetails = document.createElement("details");
   selectorDetails.style.marginBottom = "10px";
+  selectorDetails.open = selectorCandidates.length <= 2;
 
-  const selectorDetailsTitle = document.createElement("div");
+  const selectorDetailsTitle = document.createElement("summary");
   selectorDetailsTitle.textContent = `선택자 상세 ${selectorCandidateIndex + 1}/${selectorCandidates.length}`;
   selectorDetailsTitle.style.fontWeight = "700";
   selectorDetailsTitle.style.marginBottom = "6px";
+  selectorDetailsTitle.style.cursor = "pointer";
 
   const selectorDetailsGuide = document.createElement("div");
-  selectorDetailsGuide.textContent = "현재 오브젝트에서 생성된 selector 후보 전체입니다. 긴 경로도 그대로 확인할 수 있습니다.";
+  selectorDetailsGuide.textContent = "긴 경로 selector까지 보고 직접 고를 수 있습니다.";
   selectorDetailsGuide.style.marginBottom = "8px";
   selectorDetailsGuide.style.color = "#c9ba9c";
   selectorDetailsGuide.style.lineHeight = "1.45";
@@ -1861,7 +1870,7 @@ function buildPreviewPanel(
 
   const refreshButton = document.createElement("button");
   refreshButton.type = "button";
-  refreshButton.textContent = "선택자 다시 읽기";
+  refreshButton.textContent = "다시 읽기";
 
   const rangeActions = document.createElement("div");
   rangeActions.style.display = "grid";
