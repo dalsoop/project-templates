@@ -46,17 +46,17 @@ function isSupportedUrl(url?: string): boolean {
 }
 
 function setUnsupportedState(url?: string): void {
-  siteLabelElement.textContent = url ?? "Unsupported page";
-  ruleCountElement.textContent = "Infocutter works on regular http and https pages only.";
-  siteStateElement.textContent = "This page cannot be modified";
-  globalStateElement.textContent = "Open a normal website to use picker mode";
+  siteLabelElement.textContent = url ?? "지원되지 않는 페이지";
+  ruleCountElement.textContent = "인포커터는 일반 http, https 웹페이지에서만 동작합니다.";
+  siteStateElement.textContent = "이 페이지는 수정할 수 없습니다";
+  globalStateElement.textContent = "선택 모드는 일반 웹사이트에서만 사용할 수 있습니다";
   pickButtonElement.disabled = true;
   toggleSiteButtonElement.disabled = true;
   toggleGlobalButtonElement.disabled = true;
   clearButtonElement.disabled = true;
   ruleListElement.replaceChildren();
   emptyStateElement.hidden = false;
-  emptyStateElement.textContent = "Chrome internal pages and the Web Store are outside the extension target area.";
+  emptyStateElement.textContent = "Chrome 내부 페이지와 웹스토어는 확장 기능 적용 대상이 아닙니다.";
 }
 
 async function getActiveTab(): Promise<ActiveTab> {
@@ -70,7 +70,7 @@ async function getActiveTab(): Promise<ActiveTab> {
 
       const [tab] = tabs;
       if (tab?.id === undefined) {
-        reject(new Error("Could not resolve the active tab."));
+        reject(new Error("현재 활성 탭을 찾을 수 없습니다."));
         return;
       }
 
@@ -93,7 +93,7 @@ async function sendMessageToTab(
       }
 
       if (!response || typeof response !== "object") {
-        reject(new Error(`Message failed: ${type}`));
+        reject(new Error(`메시지 처리에 실패했습니다: ${type}`));
         return;
       }
 
@@ -107,7 +107,7 @@ async function askContentScript<T>(type: string): Promise<T> {
   const response = await sendMessageToTab(tab.id, type);
 
   if (!response.ok || response.data === undefined) {
-    throw new Error(`Message failed: ${type}`);
+    throw new Error(`메시지 처리에 실패했습니다: ${type}`);
   }
 
   return response.data as T;
@@ -118,7 +118,7 @@ async function mutateContentScript<T>(type: string, payload?: MessagePayload): P
   const response = await sendMessageToTab(tab.id, type, payload);
 
   if (!response.ok || response.data === undefined) {
-    throw new Error(`Message failed: ${type}`);
+    throw new Error(`메시지 처리에 실패했습니다: ${type}`);
   }
 
   return response.data as T;
@@ -136,14 +136,14 @@ function buildRuleList(state: ActiveSiteState): void {
     const removeButton = document.createElement("button");
     removeButton.type = "button";
     removeButton.className = "popup__rule-remove";
-    removeButton.textContent = "Remove";
+    removeButton.textContent = "삭제";
     removeButton.addEventListener("click", () => {
       void (async () => {
         const nextState = await mutateContentScript<ActiveSiteState>(messageTypes.removeSiteRule, { selector });
         renderState(nextState);
-        statusElement.textContent = "Removed selector.";
+        statusElement.textContent = "선택자를 삭제했습니다.";
       })().catch((error: unknown) => {
-        statusElement.textContent = error instanceof Error ? error.message : "Failed to remove selector.";
+        statusElement.textContent = error instanceof Error ? error.message : "선택자 삭제에 실패했습니다.";
       });
     });
 
@@ -157,11 +157,11 @@ function buildRuleList(state: ActiveSiteState): void {
 
 function renderState(state: ActiveSiteState): void {
   siteLabelElement.textContent = state.hostname;
-  ruleCountElement.textContent = `${state.selectorCount} saved selector${state.selectorCount === 1 ? "" : "s"}`;
-  siteStateElement.textContent = state.siteEnabled ? "Site is enabled" : "Site is disabled";
-  globalStateElement.textContent = state.globalEnabled ? "Extension is enabled" : "Extension is disabled everywhere";
-  toggleSiteButtonElement.textContent = state.siteEnabled ? "Disable on this site" : "Enable on this site";
-  toggleGlobalButtonElement.textContent = state.globalEnabled ? "Disable everywhere" : "Enable everywhere";
+  ruleCountElement.textContent = `저장된 선택자 ${state.selectorCount}개`;
+  siteStateElement.textContent = state.siteEnabled ? "이 사이트에서 사용 중" : "이 사이트에서 꺼짐";
+  globalStateElement.textContent = state.globalEnabled ? "확장 기능이 켜져 있음" : "확장 기능이 전체 꺼짐";
+  toggleSiteButtonElement.textContent = state.siteEnabled ? "이 사이트에서 끄기" : "이 사이트에서 켜기";
+  toggleGlobalButtonElement.textContent = state.globalEnabled ? "전체 끄기" : "전체 켜기";
   pickButtonElement.disabled = !state.globalEnabled;
   buildRuleList(state);
 }
@@ -182,9 +182,9 @@ pickButtonElement.addEventListener("click", () => {
   void (async () => {
     const tab = await getActiveTab();
     await sendMessageToTab(tab.id, messageTypes.startPicker);
-    statusElement.textContent = "Picker started. Move to the page and click the element you want to hide.";
+    statusElement.textContent = "선택 모드를 시작했습니다. 페이지로 돌아가서 숨길 요소를 클릭하세요.";
   })().catch((error: unknown) => {
-    statusElement.textContent = error instanceof Error ? error.message : "Failed to start picker.";
+    statusElement.textContent = error instanceof Error ? error.message : "선택 모드 시작에 실패했습니다.";
   });
 });
 
@@ -195,9 +195,9 @@ toggleSiteButtonElement.addEventListener("click", () => {
       enabled: !currentState.siteEnabled
     });
     renderState(nextState);
-    statusElement.textContent = nextState.siteEnabled ? "Enabled on this site." : "Disabled on this site.";
+    statusElement.textContent = nextState.siteEnabled ? "이 사이트에서 다시 켰습니다." : "이 사이트에서 껐습니다.";
   })().catch((error: unknown) => {
-    statusElement.textContent = error instanceof Error ? error.message : "Failed to update site state.";
+    statusElement.textContent = error instanceof Error ? error.message : "사이트 상태 변경에 실패했습니다.";
   });
 });
 
@@ -208,15 +208,15 @@ toggleGlobalButtonElement.addEventListener("click", () => {
       enabled: !currentState.globalEnabled
     });
     renderState(nextState);
-    statusElement.textContent = nextState.globalEnabled ? "Extension enabled everywhere." : "Extension disabled everywhere.";
+    statusElement.textContent = nextState.globalEnabled ? "확장 기능을 전체 켰습니다." : "확장 기능을 전체 껐습니다.";
   })().catch((error: unknown) => {
-    statusElement.textContent = error instanceof Error ? error.message : "Failed to update global state.";
+    statusElement.textContent = error instanceof Error ? error.message : "전체 상태 변경에 실패했습니다.";
   });
 });
 
 refreshButtonElement.addEventListener("click", () => {
   void refreshState().catch((error: unknown) => {
-    statusElement.textContent = error instanceof Error ? error.message : "Failed to refresh.";
+    statusElement.textContent = error instanceof Error ? error.message : "새로고침에 실패했습니다.";
   });
 });
 
@@ -224,12 +224,12 @@ clearButtonElement.addEventListener("click", () => {
   void (async () => {
     const state = await askContentScript<ActiveSiteState>(messageTypes.clearSiteRules);
     renderState(state);
-    statusElement.textContent = "Cleared rules for this site.";
+    statusElement.textContent = "이 사이트 규칙을 모두 삭제했습니다.";
   })().catch((error: unknown) => {
-    statusElement.textContent = error instanceof Error ? error.message : "Failed to clear site rules.";
+    statusElement.textContent = error instanceof Error ? error.message : "이 사이트 규칙 삭제에 실패했습니다.";
   });
 });
 
 void refreshState().catch((error: unknown) => {
-  statusElement.textContent = error instanceof Error ? error.message : "Popup failed to initialize.";
+  statusElement.textContent = error instanceof Error ? error.message : "팝업 초기화에 실패했습니다.";
 });

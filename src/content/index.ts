@@ -369,7 +369,7 @@ function buildPickerLabel(): HTMLDivElement {
   label.style.font = '12px "SF Mono", "IBM Plex Mono", ui-monospace, monospace';
   label.style.zIndex = "2147483647";
   label.style.pointerEvents = "none";
-  label.textContent = "Infocutter pick mode: click an element, or press Escape.";
+  label.textContent = "인포커터 선택 모드: 숨길 요소를 클릭하거나 Escape로 취소하세요.";
   document.documentElement.append(label);
   return label;
 }
@@ -552,7 +552,7 @@ chrome.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) =
 
     sendResponse({ ok: false });
   })().catch((error: unknown) => {
-    console.error("Content script message handling failed", error);
+    console.error("콘텐츠 스크립트 메시지 처리에 실패했습니다", error);
     sendResponse({ ok: false });
   });
 

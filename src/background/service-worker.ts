@@ -40,21 +40,21 @@ function createContextMenus(): void {
   chrome.contextMenus.removeAll(() => {
     chrome.contextMenus.create({
       id: contextMenuIds.root,
-      title: "Infocutter",
+      title: "인포커터",
       contexts: ["all"]
     });
 
     chrome.contextMenus.create({
       id: contextMenuIds.hideTarget,
       parentId: contextMenuIds.root,
-      title: "Hide this element",
+      title: "이 요소 숨기기",
       contexts: ["all"]
     });
 
     chrome.contextMenus.create({
       id: contextMenuIds.startPicker,
       parentId: contextMenuIds.root,
-      title: "Start picker mode",
+      title: "선택 모드 시작",
       contexts: ["all"]
     });
   });
@@ -82,14 +82,14 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
 
   if (info.menuItemId === contextMenuIds.hideTarget) {
     void sendTabMessage(tab.id, messageTypes.hideLastContextTarget).catch((error: unknown) => {
-      console.warn("Infocutter context hide failed", error);
+      console.warn("인포커터 우클릭 숨기기에 실패했습니다", error);
     });
     return;
   }
 
   if (info.menuItemId === contextMenuIds.startPicker) {
     void sendTabMessage(tab.id, messageTypes.startPicker).catch((error: unknown) => {
-      console.warn("Infocutter picker start failed", error);
+      console.warn("인포커터 선택 모드 시작에 실패했습니다", error);
     });
   }
 });

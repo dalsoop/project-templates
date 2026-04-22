@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
-  "name": "Infocutter",
-  "description": "Hide page elements with saved per-site selectors and quick picker mode.",
+  "name": "인포커터",
+  "description": "사이트별로 선택자를 저장해 웹페이지 요소를 숨기는 확장 프로그램입니다.",
   "version": "0.1.0",
   "minimum_chrome_version": "120",
   "permissions": ["storage", "tabs", "contextMenus"],
@@ -17,7 +17,7 @@
     "type": "module"
   },
   "action": {
-    "default_title": "Infocutter",
+    "default_title": "인포커터",
     "default_popup": "public/popup.html",
     "default_icon": {
       "16": "public/icons/icon-16.png",
