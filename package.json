@@ -5,13 +5,22 @@
   "description": "Manifest V3 DOM-hiding Chrome extension for managing per-site selectors.",
   "type": "module",
   "scripts": {
+    "bootstrap": "npm install",
     "clean": "rm -rf dist",
+    "clean:all": "rm -rf dist dist-package",
+    "doctor": "node ./scripts/doctor.mjs",
     "build": "npm run clean && tsc -p tsconfig.json && node ./scripts/build.mjs",
+    "dev": "npm run build && node ./scripts/dev.mjs",
+    "watch": "node ./scripts/watch.mjs",
+    "rebuild": "npm run clean:all && npm run build && npm run doctor",
     "build:zip": "npm run build && node ./scripts/package.mjs",
+    "package": "npm run build:zip",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint .",
     "test": "npm run build && node --test dist/tests/selector.test.js",
-    "check": "npm run lint && npm run typecheck && npm run test"
+    "check": "npm run lint && npm run typecheck && npm run test",
+    "rc": "npm run rebuild && npm run check && npm run build:zip",
+    "reset": "npm run clean:all"
   },
   "devDependencies": {
     "@eslint/js": "^9.25.1",
