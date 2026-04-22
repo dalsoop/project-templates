@@ -107,16 +107,11 @@ async function sendMessageToTab(
 }
 
 function hasScriptingApi(): boolean {
-  const scriptingApi = Reflect.get(chrome, "scripting");
-  if (!scriptingApi || typeof scriptingApi !== "object") {
-    return false;
-  }
+  const scriptingApi = (Reflect.get(chrome, "scripting") ?? {}) as {
+    executeScript?: unknown;
+  };
 
-  if (!("executeScript" in scriptingApi) || typeof scriptingApi.executeScript !== "function") {
-    return false;
-  }
-
-  return true;
+  return typeof scriptingApi.executeScript === "function";
 }
 
 async function ensureContentScript(tabId: number): Promise<void> {
