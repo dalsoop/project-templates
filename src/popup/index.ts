@@ -107,7 +107,7 @@ async function sendMessageToTab(
 }
 
 function hasScriptingApi(): boolean {
-  const scriptingApi = (Reflect.get(chrome, "scripting") ?? {}) as {
+  const scriptingApi = Reflect.get(chrome, "scripting") as {
     executeScript?: unknown;
   };
 
