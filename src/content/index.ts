@@ -866,7 +866,22 @@ function depthLabel(depthIndex: number): string {
   return `부모 ${depthIndex}단계`;
 }
 
+function elementShortLabel(element: Element): string {
+  const id = element.getAttribute("id");
+  if (id) {
+    return `${element.localName}#${id}`;
+  }
+
+  const firstClass = Array.from(element.classList).find((className) => maybeStableClassName(className));
+  if (firstClass) {
+    return `${element.localName}.${firstClass}`;
+  }
+
+  return element.localName;
+}
+
 function buildPreviewPanel(
+  depthChain: Element[],
   depthIndex: number,
   depthTotal: number,
   selector: string,
@@ -908,9 +923,30 @@ function buildPreviewPanel(
   depthMeta.style.marginBottom = "8px";
   depthMeta.style.color = "#c9ba9c";
 
+  const breadcrumb = document.createElement("div");
+  breadcrumb.style.display = "flex";
+  breadcrumb.style.flexWrap = "wrap";
+  breadcrumb.style.gap = "6px";
+  breadcrumb.style.marginBottom = "8px";
+
+  for (const [index, node] of depthChain.entries()) {
+    const chip = document.createElement("span");
+    chip.textContent = elementShortLabel(node);
+    chip.style.padding = "3px 6px";
+    chip.style.border = "1px solid rgba(255,255,255,0.18)";
+    chip.style.background = index === depthIndex ? "rgba(217,119,6,0.24)" : "rgba(255,255,255,0.08)";
+    chip.style.color = index === depthIndex ? "#fff7ed" : "#f7f4eb";
+    breadcrumb.append(chip);
+  }
+
   const qualityMeta = document.createElement("div");
   qualityMeta.style.marginBottom = "8px";
   qualityMeta.style.fontWeight = "700";
+
+  const assistMeta = document.createElement("div");
+  assistMeta.style.marginBottom = "8px";
+  assistMeta.style.color = "#c9ba9c";
+  assistMeta.style.lineHeight = "1.45";
 
   const input = document.createElement("textarea");
   input.value = selector;
@@ -988,6 +1024,7 @@ function buildPreviewPanel(
       meta.textContent = `${depthLabel(depthIndex)} · 선택자가 비어 있습니다.`;
       qualityMeta.textContent = "상태: 비어 있음";
       qualityMeta.style.color = "#fca5a5";
+      assistMeta.textContent = "안내: 선택자가 비어 있어 적용할 수 없습니다.";
       applyButton.disabled = true;
       applyPreviewSelector("__infocutter_invalid__");
       return;
@@ -997,6 +1034,7 @@ function buildPreviewPanel(
       meta.textContent = `${depthLabel(depthIndex)} · 올바르지 않은 선택자입니다.`;
       qualityMeta.textContent = `상태: ${assessment.label}`;
       qualityMeta.style.color = assessment.tone;
+      assistMeta.textContent = "안내: CSS 선택자 문법을 다시 확인하세요.";
       applyButton.disabled = true;
       applyPreviewSelector("__infocutter_invalid__");
       return;
@@ -1005,6 +1043,9 @@ function buildPreviewPanel(
     meta.textContent = `${depthLabel(depthIndex)} · 현재 선택자는 ${assessment.matches}개 요소에 적용됩니다.`;
     qualityMeta.textContent = `상태: ${assessment.label}`;
     qualityMeta.style.color = assessment.tone;
+    assistMeta.textContent = assessment.applyAllowed
+      ? "안내: 지금 상태에서 바로 적용해도 됩니다. 필요하면 더 넓게/좁게 또는 직접 편집하세요."
+      : "안내: 현재 선택자는 범위가 너무 넓습니다. 더 좁게 가거나 다른 선택자로 바꾸세요.";
     applyButton.disabled = !assessment.applyAllowed;
     applyPreviewSelector(currentSelector);
   };
@@ -1020,7 +1061,7 @@ function buildPreviewPanel(
   input.addEventListener("input", updatePreview);
 
   actions.append(applyButton, refreshButton, narrowButton, nextButton, widerButton, cancelButton);
-  panel.append(title, meta, depthMeta, qualityMeta, input, actions);
+  panel.append(title, meta, depthMeta, breadcrumb, qualityMeta, assistMeta, input, actions);
   document.documentElement.append(panel);
   updatePreview();
   return panel;
@@ -1271,6 +1312,7 @@ function startPicker(): void {
       const selector = candidates[candidateIndex] ?? buildSelector(focusElement);
       applyPreviewSelector(selector);
       buildPreviewPanel(
+        depthChain,
         depthIndex,
         depthChain.length,
         selector,
