@@ -125,15 +125,6 @@ async function sendRuntimeMessage<T>(message: Record<string, unknown>): Promise<
   });
 }
 
-async function pingContentScript(tabId: number): Promise<boolean> {
-  try {
-    const response = await sendMessageToTab(tabId, messageTypes.ping);
-    return response.ok;
-  } catch {
-    return false;
-  }
-}
-
 async function ensureConnectedTab(tabId: number): Promise<void> {
   const response = await sendRuntimeMessage<{ ok: boolean }>({
     type: messageTypes.ensureTabReady,
