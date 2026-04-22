@@ -60,6 +60,33 @@ function nthOfTypeSelector(element: Element): string {
   return `${element.localName}:nth-of-type(${index})`;
 }
 
+function isBareTagSelector(selector: string): boolean {
+  return /^[a-z][a-z0-9-]*$/i.test(selector);
+}
+
+function selectorSpecificityScore(selector: string): number {
+  let score = 0;
+  if (selector.includes("#")) {
+    score += 6;
+  }
+  if (selector.includes("[")) {
+    score += 4;
+  }
+  if (selector.includes(".")) {
+    score += 3;
+  }
+  if (selector.includes(":nth-of-type")) {
+    score -= 2;
+  }
+  if (selector.includes(">")) {
+    score += 2;
+  }
+  if (isBareTagSelector(selector)) {
+    score -= 6;
+  }
+  return score;
+}
+
 function simpleCandidates(element: Element, options?: { allowNth?: boolean }): string[] {
   const selectors: string[] = [];
   const id = element.getAttribute("id");
@@ -113,7 +140,11 @@ export function buildSelectorCandidates(element: Element, root: Document = docum
     results.push(selector);
   };
 
-  for (const selector of uniqueDirectCandidates(element, root)) {
+  const directCandidates = uniqueDirectCandidates(element, root).sort(
+    (left, right) => selectorSpecificityScore(right) - selectorSpecificityScore(left)
+  );
+
+  for (const selector of directCandidates) {
     pushIfUseful(selector);
   }
 

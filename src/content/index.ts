@@ -5,6 +5,7 @@ const STYLE_ELEMENT_ID = "infocutter-style-rules";
 const PICKER_OVERLAY_ID = "infocutter-picker-overlay";
 const PICKER_PREVIEW_STYLE_ID = "infocutter-preview-style";
 const PICKER_PREVIEW_PANEL_ID = "infocutter-preview-panel";
+const PICKER_HOVER_STYLE_ID = "infocutter-hover-style";
 const PICKER_FRAME_MESSAGE_TYPE = "infocutter/start-picker-in-frame";
 const PICKER_FRAME_ACK_TYPE = "infocutter/start-picker-in-frame-ack";
 
@@ -518,13 +519,14 @@ function pathSelector(ancestor: Element, target: Element): string {
   let current: Element | null = target;
 
   while (current && current !== ancestor) {
-    const candidates = simpleCandidates(current, { allowNth: true });
-    segments.unshift(candidates[0] ?? current.localName);
+    segments.unshift(preferredSegmentSelector(current));
     current = current.parentElement;
   }
 
-  const anchor = simpleCandidates(ancestor, { allowNth: false }).find((selector) => isUniqueSelector(selector))
-    ?? ancestor.localName;
+  const anchor = simpleCandidates(ancestor, { allowNth: true })
+    .filter((candidate) => !isBareTagSelector(candidate))
+    .find((candidate) => isUniqueSelector(candidate))
+    ?? nthOfTypeSelector(ancestor);
 
   return [anchor, ...segments].join(" > ");
 }
@@ -542,7 +544,11 @@ function buildSelectorCandidates(element: Element): string[] {
     selectors.push(selector);
   };
 
-  for (const selector of simpleCandidates(element, { allowNth: true })) {
+  const directCandidates = simpleCandidates(element, { allowNth: true }).sort(
+    (left, right) => selectorSpecificityScore(right) - selectorSpecificityScore(left)
+  );
+
+  for (const selector of directCandidates) {
     if (isUniqueSelector(selector)) {
       pushIfUseful(selector);
     }
@@ -563,6 +569,7 @@ function buildSelectorCandidates(element: Element): string[] {
   }
 
   if (selectors.length === 0) {
+    pushIfUseful(pathSelector(element.parentElement ?? element, element));
     pushIfUseful(nthOfTypeSelector(element));
   }
 
@@ -611,6 +618,7 @@ function removePickerArtifacts(): void {
   document.getElementById(`${PICKER_OVERLAY_ID}-label`)?.remove();
   document.getElementById(PICKER_PREVIEW_PANEL_ID)?.remove();
   document.getElementById(PICKER_PREVIEW_STYLE_ID)?.remove();
+  document.getElementById(PICKER_HOVER_STYLE_ID)?.remove();
   document.documentElement.style.cursor = "";
 }
 
@@ -645,12 +653,98 @@ function buildPickerLabel(): HTMLDivElement {
   return label;
 }
 
+function setPickerLabelText(text: string): void {
+  const label = document.getElementById(`${PICKER_OVERLAY_ID}-label`);
+  if (label instanceof HTMLDivElement) {
+    label.textContent = text;
+  }
+}
+
 function matchCountForSelector(selector: string): number | null {
   try {
     return document.querySelectorAll(selector).length;
   } catch {
     return null;
   }
+}
+
+function isBareTagSelector(selector: string): boolean {
+  return /^[a-z][a-z0-9-]*$/i.test(selector);
+}
+
+function selectorSpecificityScore(selector: string): number {
+  let score = 0;
+  if (selector.includes("#")) {
+    score += 6;
+  }
+  if (selector.includes("[")) {
+    score += 4;
+  }
+  if (selector.includes(".")) {
+    score += 3;
+  }
+  if (selector.includes(":nth-of-type")) {
+    score -= 2;
+  }
+  if (selector.includes(">")) {
+    score += 2;
+  }
+  if (isBareTagSelector(selector)) {
+    score -= 6;
+  }
+  return score;
+}
+
+function selectorAssessment(selector: string): {
+  applyAllowed: boolean;
+  label: string;
+  matches: number | null;
+  tone: string;
+} {
+  const matches = matchCountForSelector(selector);
+
+  if (matches === null) {
+    return {
+      applyAllowed: false,
+      label: "잘못된 선택자",
+      matches,
+      tone: "#fca5a5"
+    };
+  }
+
+  if (matches === 1) {
+    return {
+      applyAllowed: true,
+      label: "단일 요소",
+      matches,
+      tone: "#86efac"
+    };
+  }
+
+  if (isBareTagSelector(selector)) {
+    return {
+      applyAllowed: matches <= 3,
+      label: matches <= 3 ? "넓은 태그 선택자" : "위험한 태그 선택자",
+      matches,
+      tone: matches <= 3 ? "#fde68a" : "#fca5a5"
+    };
+  }
+
+  if (matches <= 12) {
+    return {
+      applyAllowed: true,
+      label: "그룹 선택",
+      matches,
+      tone: "#93c5fd"
+    };
+  }
+
+  return {
+    applyAllowed: false,
+    label: "너무 넓은 선택자",
+    matches,
+    tone: "#fca5a5"
+  };
 }
 
 function applyPreviewSelector(selector: string): boolean {
@@ -668,6 +762,86 @@ function applyPreviewSelector(selector: string): boolean {
 
   style.textContent = `${selector} { display: none !important; }`;
   return true;
+}
+
+function applyHoverSelector(selector: string | null): void {
+  let style = document.getElementById(PICKER_HOVER_STYLE_ID);
+  if (!(style instanceof HTMLStyleElement)) {
+    style = document.createElement("style");
+    style.id = PICKER_HOVER_STYLE_ID;
+    document.documentElement.append(style);
+  }
+
+  if (!selector) {
+    style.textContent = "";
+    return;
+  }
+
+  style.textContent = `
+    ${selector} {
+      outline: 2px solid rgba(217, 119, 6, 0.9) !important;
+      background: rgba(217, 119, 6, 0.08) !important;
+      box-shadow: inset 0 0 0 9999px rgba(217, 119, 6, 0.05) !important;
+    }
+  `;
+}
+
+function isSafeGroupSelector(selector: string): boolean {
+  if (!selector) {
+    return false;
+  }
+
+  if (selector === "*" || /^[a-z0-9_-]+$/i.test(selector)) {
+    return false;
+  }
+
+  return selector.includes(".") || selector.includes("[") || selector.includes("#");
+}
+
+function buildHoverGroupSelector(element: Element): { selector: string | null; count: number } {
+  const candidates = simpleCandidates(element, { allowNth: false });
+  let bestCandidate: { selector: string; count: number; score: number } | null = null;
+
+  for (const candidate of candidates) {
+    if (!isSafeGroupSelector(candidate)) {
+      continue;
+    }
+
+    const count = matchCountForSelector(candidate);
+    if (count && count > 1 && count <= 12) {
+      const score = selectorSpecificityScore(candidate) - Math.abs(count - 4);
+      if (!bestCandidate || score > bestCandidate.score) {
+        bestCandidate = {
+          selector: candidate,
+          count,
+          score
+        };
+      }
+    }
+  }
+
+  if (bestCandidate) {
+    return {
+      selector: bestCandidate.selector,
+      count: bestCandidate.count
+    };
+  }
+
+  return {
+    selector: null,
+    count: 0
+  };
+}
+
+function preferredSegmentSelector(element: Element): string {
+  const candidates = simpleCandidates(element, { allowNth: false })
+    .filter((candidate) => !isBareTagSelector(candidate))
+    .sort((left, right) => selectorSpecificityScore(right) - selectorSpecificityScore(left));
+  if (candidates.length > 0) {
+    return candidates[0] ?? element.localName;
+  }
+
+  return nthOfTypeSelector(element);
 }
 
 function buildDepthChain(element: Element, maxDepth = 4): Element[] {
@@ -734,6 +908,10 @@ function buildPreviewPanel(
   depthMeta.style.marginBottom = "8px";
   depthMeta.style.color = "#c9ba9c";
 
+  const qualityMeta = document.createElement("div");
+  qualityMeta.style.marginBottom = "8px";
+  qualityMeta.style.fontWeight = "700";
+
   const input = document.createElement("textarea");
   input.value = selector;
   input.style.display = "block";
@@ -797,24 +975,37 @@ function buildPreviewPanel(
 
   const updatePreview = (): void => {
     const currentSelector = input.value.trim();
-    const matches = currentSelector ? matchCountForSelector(currentSelector) : null;
+    const assessment = currentSelector
+      ? selectorAssessment(currentSelector)
+      : {
+          applyAllowed: false,
+          label: "선택자가 비어 있습니다",
+          matches: null,
+          tone: "#fca5a5"
+        };
 
     if (!currentSelector) {
       meta.textContent = `${depthLabel(depthIndex)} · 선택자가 비어 있습니다.`;
+      qualityMeta.textContent = "상태: 비어 있음";
+      qualityMeta.style.color = "#fca5a5";
       applyButton.disabled = true;
       applyPreviewSelector("__infocutter_invalid__");
       return;
     }
 
-    if (matches === null) {
+    if (assessment.matches === null) {
       meta.textContent = `${depthLabel(depthIndex)} · 올바르지 않은 선택자입니다.`;
+      qualityMeta.textContent = `상태: ${assessment.label}`;
+      qualityMeta.style.color = assessment.tone;
       applyButton.disabled = true;
       applyPreviewSelector("__infocutter_invalid__");
       return;
     }
 
-    meta.textContent = `${depthLabel(depthIndex)} · 현재 선택자는 ${matches}개 요소에 적용됩니다.`;
-    applyButton.disabled = false;
+    meta.textContent = `${depthLabel(depthIndex)} · 현재 선택자는 ${assessment.matches}개 요소에 적용됩니다.`;
+    qualityMeta.textContent = `상태: ${assessment.label}`;
+    qualityMeta.style.color = assessment.tone;
+    applyButton.disabled = !assessment.applyAllowed;
     applyPreviewSelector(currentSelector);
   };
 
@@ -829,7 +1020,7 @@ function buildPreviewPanel(
   input.addEventListener("input", updatePreview);
 
   actions.append(applyButton, refreshButton, narrowButton, nextButton, widerButton, cancelButton);
-  panel.append(title, meta, depthMeta, input, actions);
+  panel.append(title, meta, depthMeta, qualityMeta, input, actions);
   document.documentElement.append(panel);
   updatePreview();
   return panel;
@@ -986,6 +1177,17 @@ function startPicker(): void {
     overlay.style.top = `${rect.top}px`;
     overlay.style.width = `${rect.width}px`;
     overlay.style.height = `${rect.height}px`;
+
+    const hoverGroup = buildHoverGroupSelector(target);
+    applyHoverSelector(hoverGroup.selector);
+    if (hoverGroup.selector) {
+      setPickerLabelText(
+        `인포커터 선택 모드: ${currentFrameLabel()} / 같은 성격의 요소 ${hoverGroup.count}개가 함께 선택될 수 있습니다.`
+      );
+      return;
+    }
+
+    setPickerLabelText(`인포커터 선택 모드: ${currentFrameLabel()} / 현재 요소 하나를 기준으로 선택합니다.`);
   };
 
   const stopPicker = (): void => {
