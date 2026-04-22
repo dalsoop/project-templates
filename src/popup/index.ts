@@ -106,12 +106,26 @@ async function sendMessageToTab(
   });
 }
 
+function getScriptingApi(): chrome.scripting.Static | null {
+  const scriptingApi = Reflect.get(chrome, "scripting");
+  if (!scriptingApi || typeof scriptingApi !== "object") {
+    return null;
+  }
+
+  if (!("executeScript" in scriptingApi) || typeof scriptingApi.executeScript !== "function") {
+    return null;
+  }
+
+  return scriptingApi as chrome.scripting.Static;
+}
+
 async function ensureContentScript(tabId: number): Promise<void> {
-  if (!chrome.scripting?.executeScript) {
+  const scriptingApi = getScriptingApi();
+  if (!scriptingApi) {
     throw new Error("확장 기능을 다시 불러와야 합니다. chrome://extensions 에서 인포커터를 새로고침한 뒤 다시 시도하세요.");
   }
 
-  await chrome.scripting.executeScript({
+  await scriptingApi.executeScript({
     target: { tabId },
     files: ["src/content/index.js"]
   });
@@ -142,7 +156,7 @@ async function runDiagnostics(): Promise<void> {
     return;
   }
 
-  if (!chrome.scripting?.executeScript) {
+  if (!getScriptingApi()) {
     debugSummaryElement.textContent =
       "진단 결과: scripting API를 찾을 수 없습니다. chrome://extensions 에서 인포커터를 새로고침하세요.";
     return;
