@@ -110,6 +110,26 @@ async function sendMessageToTab(
   });
 }
 
+async function sendMessageToTabWithRetry(
+  tabId: number,
+  type: string,
+  payload?: MessagePayload
+): Promise<{ ok: boolean; data?: unknown }> {
+  try {
+    return await sendMessageToTab(tabId, type, payload);
+  } catch (error) {
+    if (!(error instanceof Error) || !error.message.includes("Receiving end does not exist")) {
+      throw error;
+    }
+
+    await ensureConnectedTab(tabId);
+    await new Promise((resolve) => {
+      setTimeout(resolve, 120);
+    });
+    return sendMessageToTab(tabId, type, payload);
+  }
+}
+
 async function sendRuntimeMessage<T>(message: Record<string, unknown>): Promise<T> {
   return new Promise((resolve, reject) => {
     chrome.runtime.sendMessage(message, (response: unknown) => {
@@ -161,7 +181,7 @@ async function runDiagnostics(): Promise<void> {
 async function askContentScript<T>(type: string): Promise<T> {
   const tab = await getActiveTab();
   await ensureConnectedTab(tab.id);
-  const response = await sendMessageToTab(tab.id, type);
+  const response = await sendMessageToTabWithRetry(tab.id, type);
 
   if (!response.ok || response.data === undefined) {
     throw new Error(`메시지 처리에 실패했습니다: ${type}`);
@@ -173,7 +193,7 @@ async function askContentScript<T>(type: string): Promise<T> {
 async function mutateContentScript<T>(type: string, payload?: MessagePayload): Promise<T> {
   const tab = await getActiveTab();
   await ensureConnectedTab(tab.id);
-  const response = await sendMessageToTab(tab.id, type, payload);
+  const response = await sendMessageToTabWithRetry(tab.id, type, payload);
 
   if (!response.ok || response.data === undefined) {
     throw new Error(`메시지 처리에 실패했습니다: ${type}`);

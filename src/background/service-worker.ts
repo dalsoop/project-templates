@@ -7,6 +7,12 @@ const contextMenuIds = {
   startPicker: "infocutter-start-picker"
 } as const;
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
 function isSupportedUrl(url?: string): boolean {
   return typeof url === "string" && /^https?:\/\//.test(url);
 }
@@ -90,7 +96,16 @@ async function ensureTabReady(tabId: number): Promise<boolean> {
   }
 
   await ensureContentScript(tabId);
-  return pingTab(tabId);
+
+  for (const delayMs of [80, 180, 320]) {
+    await sleep(delayMs);
+    const ready = await pingTab(tabId);
+    if (ready) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 async function sendMessageToAllFrames(tabId: number, type: string): Promise<void> {
