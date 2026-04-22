@@ -182,8 +182,7 @@ pickButtonElement.addEventListener("click", () => {
   void (async () => {
     const tab = await getActiveTab();
     await sendMessageToTab(tab.id, messageTypes.startPicker);
-    statusElement.textContent = "Picker armed. Click an element in the page, or press Escape.";
-    window.close();
+    statusElement.textContent = "Picker started. Move to the page and click the element you want to hide.";
   })().catch((error: unknown) => {
     statusElement.textContent = error instanceof Error ? error.message : "Failed to start picker.";
   });

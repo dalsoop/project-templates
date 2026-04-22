@@ -57,6 +57,27 @@ body {
   margin-top: 16px;
 }
 
+.popup__guide {
+  margin-top: 16px;
+  padding: 12px;
+  border: 1px dashed #b9aa90;
+  background: rgba(255, 250, 240, 0.68);
+}
+
+.popup__guide-title {
+  margin: 0 0 8px;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.popup__guide-step {
+  margin: 6px 0 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: #4b4033;
+}
+
 .popup__rules {
   margin-top: 16px;
   padding: 12px;
