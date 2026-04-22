@@ -11,14 +11,32 @@ case "$cmd" in
   doctor)
     npm run pipe:doctor -- "$@"
     ;;
-  build)
+  build|b)
     npm run pipe:build -- "$@"
     ;;
-  watch)
+  watch|w)
     npm run pipe:watch -- "$@"
     ;;
-  check)
+  check|c)
     npm run pipe:check -- "$@"
+    ;;
+  lint)
+    npm run pipe:lint -- "$@"
+    ;;
+  typecheck|types)
+    npm run pipe:typecheck -- "$@"
+    ;;
+  test)
+    npm run pipe:test -- "$@"
+    ;;
+  package|pkg)
+    npm run pipe:package -- "$@"
+    ;;
+  clean)
+    npm run pipe:clean -- "$@"
+    ;;
+  rebuild)
+    npm run pipe:rebuild -- "$@"
     ;;
   rc)
     npm run pipe:rc -- "$@"
@@ -30,13 +48,32 @@ case "$cmd" in
     cat <<'EOF'
 인포커터 커맨드
 
-  ./infocutter dev
-  ./infocutter doctor
+일상 작업
   ./infocutter build
-  ./infocutter watch
   ./infocutter check
-  ./infocutter rc
+  ./infocutter watch
+  ./infocutter doctor
+
+개별 확인
+  ./infocutter lint
+  ./infocutter typecheck
+  ./infocutter test
+
+산출물 / 정리
+  ./infocutter package
+  ./infocutter rebuild
+  ./infocutter clean
   ./infocutter reset
+
+축약형
+  ./infocutter b
+  ./infocutter c
+  ./infocutter w
+  ./infocutter pkg
+
+기존 커맨드
+  ./infocutter dev
+  ./infocutter rc
 EOF
     ;;
   *)

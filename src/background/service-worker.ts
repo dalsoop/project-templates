@@ -1,5 +1,5 @@
 import { messageTypes } from "../shared/messages.js";
-import { findMatchingProfile, readStore } from "../shared/storage.js";
+import { findMatchingProfile, getEnabledRules, readStore } from "../shared/storage.js";
 
 const contextMenuIds = {
   root: "infocutter-root",
@@ -7,32 +7,72 @@ const contextMenuIds = {
   startPicker: "infocutter-start-picker"
 } as const;
 
+const pickerFocusByTab = new Map<number, { focused: boolean; frameScope: string | null; label: string }>();
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
 function isSupportedUrl(url?: string): boolean {
   return typeof url === "string" && /^https?:\/\//.test(url);
 }
 
+function isMissingTabError(error: unknown): boolean {
+  return error instanceof Error && error.message.includes("No tab with id");
+}
+
+async function doesTabExist(tabId: number): Promise<boolean> {
+  try {
+    await chrome.tabs.get(tabId);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function runBadgeOperation(operation: () => Promise<void>): Promise<void> {
+  try {
+    await operation();
+  } catch (error) {
+    if (isMissingTabError(error)) {
+      return;
+    }
+
+    throw error;
+  }
+}
+
 async function updateBadgeForTab(tabId: number, url?: string): Promise<void> {
+  const exists = await doesTabExist(tabId);
+  if (!exists) {
+    pickerFocusByTab.delete(tabId);
+    return;
+  }
+
   if (!url || !/^https?:\/\//.test(url)) {
-    await chrome.action.setBadgeText({ tabId, text: "" });
+    await runBadgeOperation(() => chrome.action.setBadgeText({ tabId, text: "" }));
     return;
   }
 
   const store = await readStore();
   const profile = findMatchingProfile(store, url);
+  const enabledRules = getEnabledRules(profile);
 
-  if (!store.settings.globalEnabled || !profile || !profile.enabled || profile.rules.length === 0) {
-    await chrome.action.setBadgeText({ tabId, text: "" });
+  if (!store.settings.globalEnabled || !profile || !profile.enabled || enabledRules.length === 0) {
+    await runBadgeOperation(() => chrome.action.setBadgeText({ tabId, text: "" }));
     return;
   }
 
-  await chrome.action.setBadgeBackgroundColor({
+  await runBadgeOperation(() => chrome.action.setBadgeBackgroundColor({
     tabId,
     color: "#8f2d1d"
-  });
-  await chrome.action.setBadgeText({
+  }));
+  await runBadgeOperation(() => chrome.action.setBadgeText({
     tabId,
-    text: String(Math.min(profile.rules.length, 99))
-  });
+    text: String(Math.min(enabledRules.length, 99))
+  }));
 }
 
 function createContextMenus(): void {
@@ -59,7 +99,12 @@ function createContextMenus(): void {
   });
 }
 
-async function sendTabMessage(tabId: number, type: string): Promise<void> {
+async function sendTabMessage(tabId: number, type: string, frameId?: number): Promise<void> {
+  if (typeof frameId === "number") {
+    await chrome.tabs.sendMessage(tabId, { type }, { frameId });
+    return;
+  }
+
   await chrome.tabs.sendMessage(tabId, { type });
 }
 
@@ -90,7 +135,20 @@ async function ensureTabReady(tabId: number): Promise<boolean> {
   }
 
   await ensureContentScript(tabId);
-  return pingTab(tabId);
+
+  for (const delayMs of [80, 180, 320]) {
+    await sleep(delayMs);
+    const ready = await pingTab(tabId);
+    if (ready) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+async function sendMessageToTopFrame(tabId: number, type: string): Promise<void> {
+  await sendTabMessage(tabId, type, 0);
 }
 
 async function sendMessageToAllFrames(tabId: number, type: string): Promise<void> {
@@ -110,7 +168,7 @@ async function sendMessageToAllFrames(tabId: number, type: string): Promise<void
       try {
         await chrome.tabs.sendMessage(tabId, { type }, { frameId });
       } catch {
-        // Ignore per-frame failures.
+        // Ignore per-frame failures during cleanup.
       }
     })
   );
@@ -133,10 +191,11 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
   }
 
   const tabId = tab.id;
+  const frameId = typeof info.frameId === "number" ? info.frameId : undefined;
 
   if (info.menuItemId === contextMenuIds.hideTarget) {
     void ensureContentScript(tabId)
-      .then(async () => sendTabMessage(tabId, messageTypes.hideLastContextTarget))
+      .then(async () => sendTabMessage(tabId, messageTypes.hideLastContextTarget, frameId))
       .catch((error: unknown) => {
       console.warn("인포커터 우클릭 숨기기에 실패했습니다", error);
     });
@@ -145,7 +204,10 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
 
   if (info.menuItemId === contextMenuIds.startPicker) {
     void ensureContentScript(tabId)
-      .then(async () => sendMessageToAllFrames(tabId, messageTypes.startPicker))
+      .then(async () => {
+        await sendMessageToAllFrames(tabId, messageTypes.stopPicker);
+        await sendMessageToTopFrame(tabId, messageTypes.startPicker);
+      })
       .catch((error: unknown) => {
       console.warn("인포커터 선택 모드 시작에 실패했습니다", error);
     });
@@ -170,6 +232,18 @@ chrome.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) =
 
     if (type === messageTypes.ensureTabReady) {
       sendResponse({ ok: await ensureTabReady(tabId) });
+      return;
+    }
+
+    if (type === messageTypes.getPickerFocus) {
+      sendResponse({
+        ok: true,
+        data: pickerFocusByTab.get(tabId) ?? {
+          focused: false,
+          frameScope: null,
+          label: "선택 모드 비활성"
+        }
+      });
       return;
     }
 
@@ -219,7 +293,33 @@ chrome.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) =
         return;
       }
 
-      await sendMessageToAllFrames(tabId, messageTypes.startPicker);
+      await sendMessageToAllFrames(tabId, messageTypes.stopPicker);
+      pickerFocusByTab.set(tabId, {
+        focused: true,
+        frameScope: null,
+        label: "메인 문서 선택 중"
+      });
+      await sendMessageToTopFrame(tabId, messageTypes.startPicker);
+      sendResponse({ ok: true });
+      return;
+    }
+
+    if (type === messageTypes.updatePickerFocus) {
+      const senderTabId = _sender.tab?.id;
+      if (typeof senderTabId !== "number") {
+        sendResponse({ ok: false });
+        return;
+      }
+
+      const focused = "focused" in message && typeof message.focused === "boolean" ? message.focused : false;
+      const frameScope = "frameScope" in message && typeof message.frameScope === "string" ? message.frameScope : null;
+      const label = "label" in message && typeof message.label === "string" ? message.label : "선택 모드 상태 미상";
+
+      pickerFocusByTab.set(senderTabId, {
+        focused,
+        frameScope,
+        label
+      });
       sendResponse({ ok: true });
       return;
     }
@@ -234,15 +334,35 @@ chrome.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) =
 });
 
 chrome.tabs.onActivated.addListener(({ tabId }) => {
-  void chrome.tabs.get(tabId).then(async (tab) => {
-    await updateBadgeForTab(tabId, tab.url);
-  });
+  void chrome.tabs.get(tabId)
+    .then(async (tab) => {
+      await updateBadgeForTab(tabId, tab.url);
+    })
+    .catch((error: unknown) => {
+      if (isMissingTabError(error)) {
+        pickerFocusByTab.delete(tabId);
+        return;
+      }
+
+      console.warn("인포커터 활성 탭 배지 갱신에 실패했습니다", error);
+    });
 });
 
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   if (changeInfo.status === "complete" || changeInfo.url) {
-    void updateBadgeForTab(tabId, tab.url);
+    void updateBadgeForTab(tabId, tab.url).catch((error: unknown) => {
+      if (isMissingTabError(error)) {
+        pickerFocusByTab.delete(tabId);
+        return;
+      }
+
+      console.warn("인포커터 탭 업데이트 배지 갱신에 실패했습니다", error);
+    });
   }
+});
+
+chrome.tabs.onRemoved.addListener((tabId) => {
+  pickerFocusByTab.delete(tabId);
 });
 
 chrome.storage.onChanged.addListener((_changes, areaName) => {
@@ -250,11 +370,15 @@ chrome.storage.onChanged.addListener((_changes, areaName) => {
     return;
   }
 
-  void chrome.tabs.query({}).then(async (tabs) => {
-    await Promise.all(
-      tabs
-        .filter((tab): tab is chrome.tabs.Tab & { id: number } => tab.id !== undefined)
-        .map(async (tab) => updateBadgeForTab(tab.id, tab.url))
-    );
-  });
+  void chrome.tabs.query({})
+    .then(async (tabs) => {
+      await Promise.all(
+        tabs
+          .filter((tab): tab is chrome.tabs.Tab & { id: number } => tab.id !== undefined)
+          .map(async (tab) => updateBadgeForTab(tab.id, tab.url))
+      );
+    })
+    .catch((error: unknown) => {
+      console.warn("인포커터 저장소 변경 후 배지 재계산에 실패했습니다", error);
+    });
 });

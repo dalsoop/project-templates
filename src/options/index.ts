@@ -1,5 +1,5 @@
 import type { RuleProfile, RuleStore, StoredRule } from "../shared/types.js";
-import { createProfile, deleteProfile, normalizeStore, renameProfile, setProfileMatchers, writeStore } from "../shared/storage.js";
+import { createProfile, deleteProfile, findMatchingProfile, groupRulesByCard, moveProfile, normalizeStore, renameCardInProfile, removeCardFromProfile, renameProfile, setCardEnabled, setProfileMatchers, writeStore } from "../shared/storage.js";
 
 const STORAGE_KEY = "infocutter.ruleStore";
 
@@ -10,6 +10,9 @@ const toggleGlobalButton = document.getElementById("toggle-global-button");
 const newProfileName = document.getElementById("new-profile-name");
 const newProfileMatcher = document.getElementById("new-profile-matcher");
 const createProfileButton = document.getElementById("create-profile-button");
+const urlTestInput = document.getElementById("url-test-input");
+const urlTestButton = document.getElementById("url-test-button");
+const urlTestResult = document.getElementById("url-test-result");
 const globalStatus = document.getElementById("global-status");
 const summary = document.getElementById("summary");
 const siteList = document.getElementById("site-list");
@@ -30,6 +33,9 @@ const toggleGlobalButtonElement = assertElement(toggleGlobalButton, "toggle-glob
 const newProfileNameElement = assertElement(newProfileName, "new-profile-name") as HTMLInputElement;
 const newProfileMatcherElement = assertElement(newProfileMatcher, "new-profile-matcher") as HTMLInputElement;
 const createProfileButtonElement = assertElement(createProfileButton, "create-profile-button") as HTMLButtonElement;
+const urlTestInputElement = assertElement(urlTestInput, "url-test-input") as HTMLInputElement;
+const urlTestButtonElement = assertElement(urlTestButton, "url-test-button") as HTMLButtonElement;
+const urlTestResultElement = assertElement(urlTestResult, "url-test-result") as HTMLParagraphElement;
 const globalStatusElement = assertElement(globalStatus, "global-status") as HTMLParagraphElement;
 const summaryElement = assertElement(summary, "summary") as HTMLParagraphElement;
 const siteListElement = assertElement(siteList, "site-list") as HTMLDivElement;
@@ -77,8 +83,29 @@ function matchesSearch(rule: StoredRule, profile: RuleProfile, keyword: string):
   return (
     profile.name.toLowerCase().includes(keyword) ||
     profileMatchersLabel(profile).toLowerCase().includes(keyword) ||
+    rule.cardName.toLowerCase().includes(keyword) ||
     rule.selector.includes(keyword) ||
     (rule.frameScope?.includes(keyword) ?? false)
+  );
+}
+
+function matchesProfileSearch(profile: RuleProfile, keyword: string): boolean {
+  if (!keyword) {
+    return true;
+  }
+
+  return (
+    profile.name.toLowerCase().includes(keyword) ||
+    profileMatchersLabel(profile).toLowerCase().includes(keyword)
+  );
+}
+
+function isSameStoredRule(rule: StoredRule, targetRule: StoredRule): boolean {
+  return (
+    rule.cardId === targetRule.cardId &&
+    rule.createdAt === targetRule.createdAt &&
+    rule.frameScope === targetRule.frameScope &&
+    rule.selector === targetRule.selector
   );
 }
 
@@ -95,9 +122,22 @@ async function updateProfile(profileId: string, updater: (profile: RuleProfile) 
 async function deleteRule(profileId: string, targetRule: StoredRule): Promise<void> {
   await updateProfile(profileId, (profile) => ({
     ...profile,
-    rules: profile.rules.filter(
-      (rule) => !(rule.selector === targetRule.selector && rule.frameScope === targetRule.frameScope)
-    ),
+    rules: profile.rules.filter((rule) => !isSameStoredRule(rule, targetRule)),
+    updatedAt: new Date().toISOString()
+  }));
+}
+
+async function editRule(profileId: string, targetRule: StoredRule, selector: string): Promise<void> {
+  await updateProfile(profileId, (profile) => ({
+    ...profile,
+    rules: profile.rules.map((rule) => (
+      isSameStoredRule(rule, targetRule)
+        ? {
+            ...rule,
+            selector: selector.trim() || rule.selector
+          }
+        : rule
+    )),
     updatedAt: new Date().toISOString()
   }));
 }
@@ -128,10 +168,12 @@ async function render(): Promise<void> {
 
   const profileCards: HTMLElement[] = [];
   let totalVisibleRules = 0;
+  let totalVisibleCards = 0;
 
-  for (const profile of store.profiles) {
+  for (const [profileIndex, profile] of store.profiles.entries()) {
     const rules = profile.rules.filter((rule) => matchesScopeFilter(rule, scope) && matchesSearch(rule, profile, keyword));
-    if (rules.length === 0) {
+    const profileMatches = matchesProfileSearch(profile, keyword);
+    if (!profileMatches && rules.length === 0) {
       continue;
     }
 
@@ -150,7 +192,11 @@ async function render(): Promise<void> {
 
     const subtitle = document.createElement("p");
     subtitle.className = "options__site-subtitle";
-    subtitle.textContent = `${profile.enabled ? "프로필 사용 중" : "프로필 꺼짐"} · 매처 ${profileMatchersLabel(profile)} · 규칙 ${rules.length}개 표시`;
+    subtitle.textContent = `${profile.enabled ? "프로필 사용 중" : "프로필 꺼짐"} · 매처 ${profileMatchersLabel(profile)} · 카드 ${groupRulesByCard(profile.rules, profile.cards).length}개 · 규칙 ${profile.rules.length}개`;
+
+    const priorityBadge = document.createElement("div");
+    priorityBadge.className = "options__priority-badge";
+    priorityBadge.textContent = `우선순위 ${profileIndex + 1} · 위에 있을수록 먼저 적용`;
 
     const editWrap = document.createElement("div");
     editWrap.className = "options__profile-edit";
@@ -196,6 +242,30 @@ async function render(): Promise<void> {
       })();
     });
 
+    const moveUpButton = document.createElement("button");
+    moveUpButton.type = "button";
+    moveUpButton.textContent = "위로";
+    moveUpButton.className = "options__secondary";
+    moveUpButton.disabled = profileIndex === 0;
+    moveUpButton.addEventListener("click", () => {
+      void (async () => {
+        await moveProfile(profile.id, "up");
+        await render();
+      })();
+    });
+
+    const moveDownButton = document.createElement("button");
+    moveDownButton.type = "button";
+    moveDownButton.textContent = "아래로";
+    moveDownButton.className = "options__secondary";
+    moveDownButton.disabled = profileIndex === store.profiles.length - 1;
+    moveDownButton.addEventListener("click", () => {
+      void (async () => {
+        await moveProfile(profile.id, "down");
+        await render();
+      })();
+    });
+
     const saveProfileButton = document.createElement("button");
     saveProfileButton.type = "button";
     saveProfileButton.textContent = "프로필 저장";
@@ -218,46 +288,138 @@ async function render(): Promise<void> {
       })();
     });
 
-    actions.append(toggleProfileButton, clearProfileButton, saveProfileButton, deleteProfileButton);
-    headingWrap.append(title, subtitle);
+    actions.append(moveUpButton, moveDownButton, toggleProfileButton, clearProfileButton, saveProfileButton, deleteProfileButton);
+    headingWrap.append(title, subtitle, priorityBadge);
     header.append(headingWrap, actions);
     editWrap.append(nameInput, matcherEditor, matcherHint);
 
     const list = document.createElement("ul");
     list.className = "options__rule-list";
 
-    for (const rule of rules) {
+    const cards = groupRulesByCard(rules, profile.cards);
+    totalVisibleCards += cards.length;
+
+    if (cards.length === 0) {
+      const emptyCard = document.createElement("li");
+      emptyCard.className = "options__rule-item";
+
+      const emptyTitle = document.createElement("p");
+      emptyTitle.className = "options__rule-meta";
+      emptyTitle.textContent = "이 프로파일에는 아직 카드가 없습니다.";
+
+      const emptyGuide = document.createElement("p");
+      emptyGuide.className = "options__rule-meta";
+      emptyGuide.textContent = "선택 모드에서 오브젝트를 카드로 추가하면 여기에서 이름과 규칙을 관리할 수 있습니다.";
+
+      emptyCard.append(emptyTitle, emptyGuide);
+      list.append(emptyCard);
+    }
+
+    for (const cardGroup of cards) {
       const item = document.createElement("li");
       item.className = "options__rule-item";
 
-      const scopeText = document.createElement("p");
-      scopeText.className = "options__rule-scope";
-      scopeText.textContent = frameScopeLabel(rule.frameScope);
+      const cardNameInput = document.createElement("input");
+      cardNameInput.className = "options__input";
+      cardNameInput.type = "text";
+      cardNameInput.value = cardGroup.cardName;
 
-      const metaText = document.createElement("p");
-      metaText.className = "options__rule-meta";
-      metaText.textContent = `생성 시각: ${rule.createdAt}`;
+      const cardMeta = document.createElement("p");
+      cardMeta.className = "options__rule-meta";
+      cardMeta.textContent = `카드 규칙 ${cardGroup.rules.length}개 · 카드 ID ${cardGroup.cardId} · ${cardGroup.enabled ? "활성" : "비활성"}`;
 
-      const code = document.createElement("code");
-      code.className = "options__rule-code";
-      code.textContent = rule.selector;
+      const cardActions = document.createElement("div");
+      cardActions.className = "options__rule-actions";
 
-      const actions = document.createElement("div");
-      actions.className = "options__rule-actions";
-
-      const deleteButton = document.createElement("button");
-      deleteButton.type = "button";
-      deleteButton.textContent = "삭제";
-      deleteButton.className = "options__secondary";
-      deleteButton.addEventListener("click", () => {
+      const toggleCardButton = document.createElement("button");
+      toggleCardButton.type = "button";
+      toggleCardButton.textContent = cardGroup.enabled ? "카드 끄기" : "카드 켜기";
+      toggleCardButton.className = "options__secondary";
+      toggleCardButton.addEventListener("click", () => {
         void (async () => {
-          await deleteRule(profile.id, rule);
+          await setCardEnabled(profile.id, cardGroup.cardId, !cardGroup.enabled);
           await render();
         })();
       });
 
-      actions.append(deleteButton);
-      item.append(scopeText, metaText, code, actions);
+      const saveCardButton = document.createElement("button");
+      saveCardButton.type = "button";
+      saveCardButton.textContent = "카드 이름 저장";
+      saveCardButton.className = "options__secondary";
+      saveCardButton.addEventListener("click", () => {
+        void (async () => {
+          await renameCardInProfile(profile.id, cardGroup.cardId, cardNameInput.value);
+          await render();
+        })();
+      });
+
+      const deleteCardButton = document.createElement("button");
+      deleteCardButton.type = "button";
+      deleteCardButton.textContent = "카드 삭제";
+      deleteCardButton.className = "options__secondary";
+      deleteCardButton.addEventListener("click", () => {
+        void (async () => {
+          await removeCardFromProfile(profile.id, cardGroup.cardId);
+          await render();
+        })();
+      });
+
+      cardActions.append(toggleCardButton, saveCardButton, deleteCardButton);
+      item.append(cardNameInput, cardMeta, cardActions);
+
+      const innerList = document.createElement("div");
+      innerList.style.display = "grid";
+      innerList.style.gap = "10px";
+      innerList.style.marginTop = "10px";
+
+      for (const rule of cardGroup.rules) {
+        const ruleWrap = document.createElement("div");
+        ruleWrap.style.padding = "10px";
+        ruleWrap.style.background = "rgba(255,255,255,0.06)";
+
+        const scopeText = document.createElement("p");
+        scopeText.className = "options__rule-scope";
+        scopeText.textContent = frameScopeLabel(rule.frameScope);
+
+        const metaText = document.createElement("p");
+        metaText.className = "options__rule-meta";
+        metaText.textContent = `생성 시각: ${rule.createdAt}`;
+
+        const code = document.createElement("textarea");
+        code.className = "options__input options__rule-editor";
+        code.value = rule.selector;
+
+        const actions = document.createElement("div");
+        actions.className = "options__rule-actions";
+
+        const saveButton = document.createElement("button");
+        saveButton.type = "button";
+        saveButton.textContent = "저장";
+        saveButton.className = "options__secondary";
+        saveButton.addEventListener("click", () => {
+          void (async () => {
+            await editRule(profile.id, rule, code.value);
+            await render();
+          })();
+        });
+
+        const deleteButton = document.createElement("button");
+        deleteButton.type = "button";
+        deleteButton.textContent = "삭제";
+        deleteButton.className = "options__secondary";
+        deleteButton.addEventListener("click", () => {
+          void (async () => {
+            await deleteRule(profile.id, rule);
+            await render();
+          })();
+        });
+
+        actions.append(saveButton, deleteButton);
+        ruleWrap.append(scopeText, metaText, code, actions);
+        innerList.append(ruleWrap);
+      }
+
+      item.append(innerList);
       list.append(item);
     }
 
@@ -267,7 +429,19 @@ async function render(): Promise<void> {
 
   siteListElement.replaceChildren(...profileCards);
   emptyStateElement.hidden = profileCards.length > 0;
-  summaryElement.textContent = `표시 중인 프로필 ${profileCards.length}개 / 규칙 ${totalVisibleRules}개`;
+  summaryElement.textContent = `표시 중인 프로필 ${profileCards.length}개 / 카드 ${totalVisibleCards}개 / 규칙 ${totalVisibleRules}개`;
+
+  const testUrl = urlTestInputElement.value.trim();
+  if (testUrl) {
+    try {
+      const matchedProfile = findMatchingProfile(store, testUrl);
+      urlTestResultElement.textContent = matchedProfile
+        ? `매칭 결과: ${matchedProfile.name} (${matchedProfile.matchers.join(", ")})`
+        : "매칭 결과: 일치하는 프로필이 없습니다.";
+    } catch {
+      urlTestResultElement.textContent = "매칭 결과: URL 형식이 올바르지 않습니다.";
+    }
+  }
 }
 
 refreshButtonElement.addEventListener("click", () => {
@@ -294,6 +468,19 @@ createProfileButtonElement.addEventListener("click", () => {
     newProfileMatcherElement.value = "";
     await render();
   })();
+});
+
+urlTestButtonElement.addEventListener("click", () => {
+  void render();
+});
+
+urlTestInputElement.addEventListener("input", () => {
+  if (!urlTestInputElement.value.trim()) {
+    urlTestResultElement.textContent = "테스트할 URL을 입력하면 현재 우선순위 기준으로 어떤 프로필이 적용되는지 보여줍니다.";
+    return;
+  }
+
+  void render();
 });
 
 searchInputElement.addEventListener("input", () => {

@@ -120,6 +120,16 @@ button {
   flex-wrap: wrap;
 }
 
+.options__priority-badge {
+  display: inline-block;
+  margin-top: 6px;
+  padding: 4px 8px;
+  border: 1px solid #d7ceb9;
+  background: rgba(247, 244, 235, 0.9);
+  font-size: 12px;
+  color: #5b4e3f;
+}
+
 .options__site-title {
   margin: 0;
   font-size: 16px;
@@ -180,6 +190,13 @@ button {
   display: block;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.options__rule-editor {
+  width: 100%;
+  min-height: 80px;
+  box-sizing: border-box;
+  resize: vertical;
 }
 
 .options__empty {

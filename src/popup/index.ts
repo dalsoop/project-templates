@@ -3,9 +3,12 @@ import type { ActiveSiteState } from "../shared/types.js";
 
 const siteLabel = document.getElementById("site-label");
 const ruleCount = document.getElementById("rule-count");
+const profileName = document.getElementById("profile-name");
+const profileMatchers = document.getElementById("profile-matchers");
 const siteState = document.getElementById("site-state");
 const globalState = document.getElementById("global-state");
 const status = document.getElementById("status");
+const pickerState = document.getElementById("picker-state");
 const pickButton = document.getElementById("pick-button");
 const toggleSiteButton = document.getElementById("toggle-site-button");
 const toggleGlobalButton = document.getElementById("toggle-global-button");
@@ -27,9 +30,12 @@ function assertElement(element: HTMLElement | null, name: string): HTMLElement {
 
 const siteLabelElement = assertElement(siteLabel, "site-label");
 const ruleCountElement = assertElement(ruleCount, "rule-count");
+const profileNameElement = assertElement(profileName, "profile-name");
+const profileMatchersElement = assertElement(profileMatchers, "profile-matchers");
 const siteStateElement = assertElement(siteState, "site-state");
 const globalStateElement = assertElement(globalState, "global-state");
 const statusElement = assertElement(status, "status");
+const pickerStateElement = assertElement(pickerState, "picker-state");
 const pickButtonElement = assertElement(pickButton, "pick-button") as HTMLButtonElement;
 const toggleSiteButtonElement = assertElement(toggleSiteButton, "toggle-site-button") as HTMLButtonElement;
 const toggleGlobalButtonElement = assertElement(toggleGlobalButton, "toggle-global-button") as HTMLButtonElement;
@@ -43,6 +49,8 @@ const debugButtonElement = assertElement(debugButton, "debug-button") as HTMLBut
 
 type ActiveTab = chrome.tabs.Tab & { id: number };
 type MessagePayload = {
+  cardId?: string;
+  createdAt?: string;
   enabled?: boolean;
   frameScope?: string | null;
   profileId?: string | null;
@@ -110,6 +118,26 @@ async function sendMessageToTab(
   });
 }
 
+async function sendMessageToTabWithRetry(
+  tabId: number,
+  type: string,
+  payload?: MessagePayload
+): Promise<{ ok: boolean; data?: unknown }> {
+  try {
+    return await sendMessageToTab(tabId, type, payload);
+  } catch (error) {
+    if (!(error instanceof Error) || !error.message.includes("Receiving end does not exist")) {
+      throw error;
+    }
+
+    await ensureConnectedTab(tabId);
+    await new Promise((resolve) => {
+      setTimeout(resolve, 120);
+    });
+    return sendMessageToTab(tabId, type, payload);
+  }
+}
+
 async function sendRuntimeMessage<T>(message: Record<string, unknown>): Promise<T> {
   return new Promise((resolve, reject) => {
     chrome.runtime.sendMessage(message, (response: unknown) => {
@@ -158,10 +186,19 @@ async function runDiagnostics(): Promise<void> {
   debugSummaryElement.textContent = response.data ?? "진단 결과를 확인하지 못했습니다.";
 }
 
+async function refreshPickerFocus(tabId: number): Promise<void> {
+  const response = await sendRuntimeMessage<{ ok: boolean; data?: { focused: boolean; frameScope: string | null; label: string } }>({
+    type: messageTypes.getPickerFocus,
+    tabId
+  });
+
+  pickerStateElement.textContent = response.data?.label ?? "선택 모드 상태를 확인하지 못했습니다.";
+}
+
 async function askContentScript<T>(type: string): Promise<T> {
   const tab = await getActiveTab();
   await ensureConnectedTab(tab.id);
-  const response = await sendMessageToTab(tab.id, type);
+  const response = await sendMessageToTabWithRetry(tab.id, type);
 
   if (!response.ok || response.data === undefined) {
     throw new Error(`메시지 처리에 실패했습니다: ${type}`);
@@ -173,7 +210,7 @@ async function askContentScript<T>(type: string): Promise<T> {
 async function mutateContentScript<T>(type: string, payload?: MessagePayload): Promise<T> {
   const tab = await getActiveTab();
   await ensureConnectedTab(tab.id);
-  const response = await sendMessageToTab(tab.id, type, payload);
+  const response = await sendMessageToTabWithRetry(tab.id, type, payload);
 
   if (!response.ok || response.data === undefined) {
     throw new Error(`메시지 처리에 실패했습니다: ${type}`);
@@ -196,74 +233,110 @@ function frameScopeLabel(frameScope: string | null): string {
 }
 
 function buildRuleList(state: ActiveSiteState): void {
-  const mainRules = state.rules.filter((rule) => rule.frameScope === null);
-  const iframeRules = state.rules.filter((rule) => rule.frameScope !== null);
+  const buildSectionTitle = (text: string): HTMLDivElement => {
+    const title = document.createElement("div");
+    title.className = "popup__meta";
+    title.style.marginBottom = "6px";
+    title.style.fontWeight = "700";
+    title.textContent = text;
+    return title;
+  };
 
-  const createRuleItem = (rule: ActiveSiteState["rules"][number]): HTMLLIElement => {
+  const createCardItem = (card: ActiveSiteState["cards"][number]): HTMLLIElement => {
     const item = document.createElement("li");
     item.className = "popup__rule-item";
+    if (!card.enabled) {
+      item.style.opacity = "0.7";
+    }
 
-    const scopeText = document.createElement("div");
-    scopeText.className = "popup__meta";
-    scopeText.textContent = frameScopeLabel(rule.frameScope);
+    const cardTitle = document.createElement("div");
+    cardTitle.className = "popup__meta";
+    cardTitle.style.fontWeight = "700";
+    cardTitle.textContent = `카드: ${card.cardName}`;
 
-    const selectorText = document.createElement("code");
-    selectorText.className = "popup__rule-selector";
-    selectorText.textContent = rule.selector;
+    const summary = document.createElement("div");
+    summary.className = "popup__meta";
+    summary.textContent = `규칙 ${card.ruleCount}개 · 카드 ID ${card.cardId} · ${card.enabled ? "활성" : "비활성"}`;
 
-    const removeButton = document.createElement("button");
-    removeButton.type = "button";
-    removeButton.className = "popup__rule-remove";
-    removeButton.textContent = "삭제";
-    removeButton.addEventListener("click", () => {
-      void (async () => {
-        const nextState = await mutateContentScript<ActiveSiteState>(messageTypes.removeSiteRule, {
-          frameScope: rule.frameScope,
-          profileId: state.activeProfileId,
-          selector: rule.selector
+    const list = document.createElement("div");
+    list.style.display = "grid";
+    list.style.gap = "6px";
+
+    for (const rule of card.rules) {
+      const scopeText = document.createElement("div");
+      scopeText.className = "popup__meta";
+      scopeText.textContent = frameScopeLabel(rule.frameScope);
+
+      const selectorText = document.createElement("code");
+      selectorText.className = "popup__rule-selector";
+      selectorText.textContent = rule.selector;
+
+      const row = document.createElement("div");
+      row.style.padding = "8px";
+      row.style.background = "rgba(255,255,255,0.06)";
+
+      const removeButton = document.createElement("button");
+      removeButton.type = "button";
+      removeButton.className = "popup__rule-remove";
+      removeButton.textContent = "삭제";
+      removeButton.addEventListener("click", () => {
+        void (async () => {
+          const nextState = await mutateContentScript<ActiveSiteState>(messageTypes.removeSiteRule, {
+            cardId: rule.cardId,
+            createdAt: rule.createdAt,
+            frameScope: rule.frameScope,
+            profileId: state.activeProfileId,
+            selector: rule.selector
+          });
+          renderState(nextState);
+          statusElement.textContent = "선택자를 삭제했습니다.";
+        })().catch((error: unknown) => {
+          statusElement.textContent = error instanceof Error ? error.message : "선택자 삭제에 실패했습니다.";
         });
-        renderState(nextState);
-        statusElement.textContent = "선택자를 삭제했습니다.";
-      })().catch((error: unknown) => {
-        statusElement.textContent = error instanceof Error ? error.message : "선택자 삭제에 실패했습니다.";
       });
-    });
 
-    item.append(scopeText, selectorText, removeButton);
+      row.append(scopeText, selectorText, removeButton);
+      list.append(row);
+    }
+
+    item.append(cardTitle, summary, list);
     return item;
   };
 
+  const enabledCards = state.cards.filter((card) => card.enabled);
+  const disabledCards = state.cards.filter((card) => !card.enabled);
   const items: HTMLElement[] = [];
 
-  const appendSection = (title: string, rules: ActiveSiteState["rules"]): void => {
-    if (rules.length === 0) {
-      return;
+  if (enabledCards.length > 0) {
+    items.push(buildSectionTitle(`활성 카드 ${enabledCards.length}개`));
+    for (const card of enabledCards) {
+      items.push(createCardItem(card));
     }
+  }
 
-    const sectionTitle = document.createElement("li");
-    sectionTitle.className = "popup__rule-item";
-    sectionTitle.style.background = "rgba(35, 31, 23, 0.06)";
-    sectionTitle.style.fontWeight = "700";
-    sectionTitle.textContent = title;
-    items.push(sectionTitle);
-
-    for (const rule of rules) {
-      items.push(createRuleItem(rule));
+  if (disabledCards.length > 0) {
+    items.push(buildSectionTitle(`비활성 카드 ${disabledCards.length}개`));
+    for (const card of disabledCards) {
+      items.push(createCardItem(card));
     }
-  };
-
-  appendSection("메인 문서 규칙", mainRules);
-  appendSection("iframe 규칙", iframeRules);
+  }
 
   ruleListElement.replaceChildren(...items);
   emptyStateElement.hidden = items.length > 0;
 }
 
 function renderState(state: ActiveSiteState): void {
+  const enabledCardCount = state.cards.filter((card) => card.enabled).length;
   siteLabelElement.textContent = state.activeProfileName
     ? `${state.hostname} · ${state.activeProfileName}`
     : `${state.hostname} · 기본 프로필`;
-  ruleCountElement.textContent = `저장된 선택자 ${state.selectorCount}개`;
+  ruleCountElement.textContent = `저장된 카드 ${state.cardCount}개 · 활성 카드 ${enabledCardCount}개 · 활성 선택자 ${state.enabledSelectorCount}개 / 전체 선택자 ${state.selectorCount}개`;
+  profileNameElement.textContent = state.activeProfileName
+    ? `현재 프로필: ${state.activeProfileName}`
+    : "현재 프로필: 아직 매칭된 프로필이 없습니다";
+  profileMatchersElement.textContent = state.matchers.length > 0
+    ? `매처: ${state.matchers.join(", ")}`
+    : "매처: 기본 hostname 프로필이 아직 만들어지지 않았습니다";
   siteStateElement.textContent = state.profileEnabled ? "현재 프로필 사용 중" : "현재 프로필 꺼짐";
   globalStateElement.textContent = state.globalEnabled ? "확장 기능이 켜져 있음" : "확장 기능이 전체 꺼짐";
   toggleSiteButtonElement.textContent = state.profileEnabled ? "현재 프로필 끄기" : "현재 프로필 켜기";
@@ -278,12 +351,14 @@ async function refreshState(): Promise<void> {
   if (!isSupportedUrl(tab.url)) {
     setUnsupportedState(tab.url);
     debugSummaryElement.textContent = "진단 결과: chrome 내부 페이지라 콘텐츠 스크립트를 붙일 수 없습니다.";
+    pickerStateElement.textContent = "선택 포커스 없음";
     return;
   }
 
   debugSummaryElement.textContent = "진단 결과: 콘텐츠 스크립트 연결 상태를 확인하는 중...";
   await ensureConnectedTab(tab.id);
   debugSummaryElement.textContent = "진단 결과: 콘텐츠 스크립트 연결됨.";
+  await refreshPickerFocus(tab.id);
   const state = await askContentScript<ActiveSiteState>(messageTypes.getPageState);
   renderState(state);
 }
@@ -299,6 +374,7 @@ pickButtonElement.addEventListener("click", () => {
     if (!response.ok) {
       throw new Error(response.data ?? "선택 모드 시작에 실패했습니다.");
     }
+    await refreshPickerFocus(tab.id);
     statusElement.textContent = "선택 모드를 시작했습니다. 페이지로 돌아가서 숨길 요소를 클릭하세요.";
   })().catch((error: unknown) => {
     statusElement.textContent = error instanceof Error ? error.message : "선택 모드 시작에 실패했습니다.";
