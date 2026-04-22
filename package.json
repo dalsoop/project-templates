@@ -1,12 +1,13 @@
 {
-  "name": "infocutter-chrome-extension-template",
+  "name": "infocutter",
   "version": "0.1.0",
-  "private": true,
-  "description": "Strict Manifest V3 template for DOM hiding tools such as Infocutter.",
+  "private": false,
+  "description": "Manifest V3 DOM-hiding Chrome extension for managing per-site selectors.",
   "type": "module",
   "scripts": {
     "clean": "rm -rf dist",
     "build": "npm run clean && tsc -p tsconfig.json && node ./scripts/build.mjs",
+    "build:zip": "npm run build && node ./scripts/package.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint .",
     "test": "npm run build && node --test dist/tests/selector.test.js",

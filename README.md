@@ -1,26 +1,48 @@
-# Infocutter Chrome Extension Template
+# Infocutter
 
-Strict Manifest V3 template for DOM-hiding extensions.
+Manifest V3 Chrome extension for hiding page elements with saved per-site selectors.
 
-## Principles
+## What It Does
 
-- Keep the extension small, inspectable, and reversible.
-- Treat selector generation as a critical subsystem, not a utility afterthought.
-- Keep cross-context logic in `src/shared`.
-- Store rules in a versioned schema.
-- Prefer explicit DOM creation over `innerHTML`.
+- Hide any element on the current site through picker mode
+- Save selectors per hostname
+- Remove saved selectors one by one
+- Disable hiding for a site without deleting its rules
+- Disable the extension globally without clearing saved data
+
+## Development Rules
+
+- Keep selector generation centralized in `src/shared/selector.ts`
+- Keep storage normalization centralized in `src/shared/storage.ts`
+- Keep popup as an operator surface, not a second business-logic layer
+- Keep the extension dependency-light and inspectable
 
 ## Commands
 
 - `npm install`
 - `npm run build`
+- `npm run build:zip`
 - `npm run check`
+
+## Load In Chrome
+
+1. Run `npm install`
+2. Run `npm run build`
+3. Open `chrome://extensions`
+4. Enable `Developer mode`
+5. Click `Load unpacked`
+6. Select the `dist` directory
+
+## Package For Distribution
+
+- Run `npm run build:zip`
+- The packaged archive is created in `dist-package/infocutter-v0.1.0.zip`
 
 ## Layout
 
-- `src/background` service worker and lifecycle hooks
+- `src/background` service worker and badge updates
 - `src/content` selector application and picker mode
-- `src/popup` toolbar UI
+- `src/popup` toolbar management UI
 - `src/shared` schema, storage, selector, and message contracts
-- `public` static extension assets
-- `tests` rule and selector tests
+- `public` manifest, popup markup, and icons
+- `tests` selector and storage migration tests

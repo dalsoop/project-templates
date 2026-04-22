@@ -1,18 +1,28 @@
 {
   "manifest_version": 3,
-  "name": "Infocutter Template",
-  "description": "Strict MV3 template for selector-based display:none tools.",
+  "name": "Infocutter",
+  "description": "Hide page elements with saved per-site selectors and quick picker mode.",
   "version": "0.1.0",
   "minimum_chrome_version": "120",
   "permissions": ["storage", "tabs"],
   "host_permissions": ["http://*/*", "https://*/*"],
+  "icons": {
+    "16": "public/icons/icon-16.png",
+    "32": "public/icons/icon-32.png",
+    "48": "public/icons/icon-48.png",
+    "128": "public/icons/icon-128.png"
+  },
   "background": {
     "service_worker": "src/background/service-worker.js",
     "type": "module"
   },
   "action": {
     "default_title": "Infocutter",
-    "default_popup": "public/popup.html"
+    "default_popup": "public/popup.html",
+    "default_icon": {
+      "16": "public/icons/icon-16.png",
+      "32": "public/icons/icon-32.png"
+    }
   },
   "content_scripts": [
     {
