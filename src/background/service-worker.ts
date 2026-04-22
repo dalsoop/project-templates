@@ -1,4 +1,11 @@
+import { messageTypes } from "../shared/messages.js";
 import { hostnameFromUrl, readSiteRules, readStore } from "../shared/storage.js";
+
+const contextMenuIds = {
+  root: "infocutter-root",
+  hideTarget: "infocutter-hide-target",
+  startPicker: "infocutter-start-picker"
+} as const;
 
 async function updateBadgeForTab(tabId: number, url?: string): Promise<void> {
   if (!url || !/^https?:\/\//.test(url)) {
@@ -25,10 +32,62 @@ async function updateBadgeForTab(tabId: number, url?: string): Promise<void> {
   });
 }
 
+function createContextMenus(): void {
+  chrome.contextMenus.removeAll(() => {
+    chrome.contextMenus.create({
+      id: contextMenuIds.root,
+      title: "Infocutter",
+      contexts: ["all"]
+    });
+
+    chrome.contextMenus.create({
+      id: contextMenuIds.hideTarget,
+      parentId: contextMenuIds.root,
+      title: "Hide this element",
+      contexts: ["all"]
+    });
+
+    chrome.contextMenus.create({
+      id: contextMenuIds.startPicker,
+      parentId: contextMenuIds.root,
+      title: "Start picker mode",
+      contexts: ["all"]
+    });
+  });
+}
+
+async function sendTabMessage(tabId: number, type: string): Promise<void> {
+  await chrome.tabs.sendMessage(tabId, { type });
+}
+
 chrome.runtime.onInstalled.addListener(() => {
   chrome.action.setBadgeTextColor({ color: "#f7f4eb" }).catch(() => {
     // Older Chrome versions may not support badge text color changes.
   });
+  createContextMenus();
+});
+
+chrome.runtime.onStartup.addListener(() => {
+  createContextMenus();
+});
+
+chrome.contextMenus.onClicked.addListener((info, tab) => {
+  if (!tab?.id) {
+    return;
+  }
+
+  if (info.menuItemId === contextMenuIds.hideTarget) {
+    void sendTabMessage(tab.id, messageTypes.hideLastContextTarget).catch((error: unknown) => {
+      console.warn("Infocutter context hide failed", error);
+    });
+    return;
+  }
+
+  if (info.menuItemId === contextMenuIds.startPicker) {
+    void sendTabMessage(tab.id, messageTypes.startPicker).catch((error: unknown) => {
+      console.warn("Infocutter picker start failed", error);
+    });
+  }
 });
 
 chrome.tabs.onActivated.addListener(({ tabId }) => {

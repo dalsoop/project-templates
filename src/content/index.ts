@@ -12,6 +12,7 @@ import {
 } from "../shared/storage.js";
 
 let pickerStop: (() => void) | null = null;
+let lastContextTarget: Element | null = null;
 
 function ensureStyleElement(): HTMLStyleElement {
   const existing = document.getElementById(STYLE_ELEMENT_ID);
@@ -137,6 +138,22 @@ function startPicker(): void {
   document.addEventListener("keydown", handleKeydown, true);
 }
 
+async function hideTargetElement(target: Element): Promise<string> {
+  const selector = buildSelector(target);
+  await addSiteRule(hostnameFromUrl(window.location.href), selector);
+  await renderRules();
+  return selector;
+}
+
+document.addEventListener(
+  "contextmenu",
+  (event) => {
+    const target = event.target;
+    lastContextTarget = target instanceof Element ? target : null;
+  },
+  true
+);
+
 chrome.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) => {
   void (async () => {
     if (!message || typeof message !== "object") {
@@ -157,6 +174,23 @@ chrome.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) =
     if (type === messageTypes.startPicker) {
       startPicker();
       sendResponse({ ok: true });
+      return;
+    }
+
+    if (type === messageTypes.hideLastContextTarget) {
+      if (!lastContextTarget) {
+        sendResponse({ ok: false });
+        return;
+      }
+
+      const selector = await hideTargetElement(lastContextTarget);
+      sendResponse({
+        ok: true,
+        data: {
+          selector,
+          state: await readActiveSiteState(window.location.href)
+        }
+      });
       return;
     }
 
