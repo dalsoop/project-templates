@@ -73,8 +73,12 @@ async function ensureContentScript(tabId: number): Promise<void> {
 
 async function pingTab(tabId: number): Promise<boolean> {
   try {
-    const response = await chrome.tabs.sendMessage(tabId, { type: messageTypes.ping }) as { ok?: boolean };
-    return Boolean(response?.ok);
+    const response: unknown = await chrome.tabs.sendMessage(tabId, { type: messageTypes.ping });
+    if (!response || typeof response !== "object") {
+      return false;
+    }
+
+    return "ok" in response && response.ok === true;
   } catch {
     return false;
   }
