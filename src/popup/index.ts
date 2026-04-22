@@ -3,6 +3,8 @@ import type { ActiveSiteState } from "../shared/types.js";
 
 const siteLabel = document.getElementById("site-label");
 const ruleCount = document.getElementById("rule-count");
+const profileName = document.getElementById("profile-name");
+const profileMatchers = document.getElementById("profile-matchers");
 const siteState = document.getElementById("site-state");
 const globalState = document.getElementById("global-state");
 const status = document.getElementById("status");
@@ -28,6 +30,8 @@ function assertElement(element: HTMLElement | null, name: string): HTMLElement {
 
 const siteLabelElement = assertElement(siteLabel, "site-label");
 const ruleCountElement = assertElement(ruleCount, "rule-count");
+const profileNameElement = assertElement(profileName, "profile-name");
+const profileMatchersElement = assertElement(profileMatchers, "profile-matchers");
 const siteStateElement = assertElement(siteState, "site-state");
 const globalStateElement = assertElement(globalState, "global-state");
 const statusElement = assertElement(status, "status");
@@ -295,6 +299,12 @@ function renderState(state: ActiveSiteState): void {
     ? `${state.hostname} · ${state.activeProfileName}`
     : `${state.hostname} · 기본 프로필`;
   ruleCountElement.textContent = `저장된 선택자 ${state.selectorCount}개`;
+  profileNameElement.textContent = state.activeProfileName
+    ? `현재 프로필: ${state.activeProfileName}`
+    : "현재 프로필: 아직 매칭된 프로필이 없습니다";
+  profileMatchersElement.textContent = state.matchers.length > 0
+    ? `매처: ${state.matchers.join(", ")}`
+    : "매처: 기본 hostname 프로필이 아직 만들어지지 않았습니다";
   siteStateElement.textContent = state.profileEnabled ? "현재 프로필 사용 중" : "현재 프로필 꺼짐";
   globalStateElement.textContent = state.globalEnabled ? "확장 기능이 켜져 있음" : "확장 기능이 전체 꺼짐";
   toggleSiteButtonElement.textContent = state.profileEnabled ? "현재 프로필 끄기" : "현재 프로필 켜기";

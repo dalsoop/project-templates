@@ -6,6 +6,7 @@ const PICKER_OVERLAY_ID = "infocutter-picker-overlay";
 const PICKER_PREVIEW_STYLE_ID = "infocutter-preview-style";
 const PICKER_PREVIEW_PANEL_ID = "infocutter-preview-panel";
 const PICKER_HOVER_STYLE_ID = "infocutter-hover-style";
+const PICKER_STATUS_BADGE_ID = "infocutter-status-badge";
 const PICKER_FRAME_MESSAGE_TYPE = "infocutter/start-picker-in-frame";
 const PICKER_FRAME_ACK_TYPE = "infocutter/start-picker-in-frame-ack";
 
@@ -616,6 +617,7 @@ async function renderRules(): Promise<void> {
 function removePickerArtifacts(): void {
   document.getElementById(PICKER_OVERLAY_ID)?.remove();
   document.getElementById(`${PICKER_OVERLAY_ID}-label`)?.remove();
+  document.getElementById(PICKER_STATUS_BADGE_ID)?.remove();
   document.getElementById(PICKER_PREVIEW_PANEL_ID)?.remove();
   document.getElementById(PICKER_PREVIEW_STYLE_ID)?.remove();
   document.getElementById(PICKER_HOVER_STYLE_ID)?.remove();
@@ -658,6 +660,28 @@ function setPickerLabelText(text: string): void {
   if (label instanceof HTMLDivElement) {
     label.textContent = text;
   }
+}
+
+function setPickerStatusBadge(label: string, tone: string): void {
+  let badge = document.getElementById(PICKER_STATUS_BADGE_ID);
+  if (!(badge instanceof HTMLDivElement)) {
+    badge = document.createElement("div");
+    badge.id = PICKER_STATUS_BADGE_ID;
+    badge.style.position = "fixed";
+    badge.style.right = "16px";
+    badge.style.bottom = "116px";
+    badge.style.padding = "8px 10px";
+    badge.style.font = '12px "SF Mono", "IBM Plex Mono", ui-monospace, monospace';
+    badge.style.zIndex = "2147483647";
+    badge.style.pointerEvents = "none";
+    badge.style.border = "1px solid rgba(255,255,255,0.2)";
+    badge.style.boxShadow = "0 8px 20px rgba(0,0,0,0.18)";
+    document.documentElement.append(badge);
+  }
+
+  badge.textContent = label;
+  badge.style.background = tone;
+  badge.style.color = "#231f17";
 }
 
 function matchCountForSelector(selector: string): number | null {
@@ -830,6 +854,42 @@ function buildHoverGroupSelector(element: Element): { selector: string | null; c
   return {
     selector: null,
     count: 0
+  };
+}
+
+function buildHoverSummary(element: Element): {
+  assessment: ReturnType<typeof selectorAssessment> | null;
+  label: string;
+  selector: string | null;
+} {
+  const groupCandidate = buildHoverGroupSelector(element);
+  if (groupCandidate.selector) {
+    const assessment = selectorAssessment(groupCandidate.selector);
+    return {
+      assessment,
+      label: `인포커터 선택 모드: ${currentFrameLabel()} / 같은 성격의 요소 ${groupCandidate.count}개가 함께 선택될 수 있습니다. 상태: ${assessment.label}`,
+      selector: groupCandidate.selector
+    };
+  }
+
+  const candidates = simpleCandidates(element, { allowNth: false })
+    .filter((candidate) => !isBareTagSelector(candidate))
+    .sort((left, right) => selectorSpecificityScore(right) - selectorSpecificityScore(left));
+
+  const safeSingle = candidates.find((candidate) => matchCountForSelector(candidate) === 1) ?? null;
+  if (safeSingle) {
+    const assessment = selectorAssessment(safeSingle);
+    return {
+      assessment,
+      label: `인포커터 선택 모드: ${currentFrameLabel()} / 현재 요소 하나를 기준으로 선택합니다. 상태: ${assessment.label}`,
+      selector: safeSingle
+    };
+  }
+
+  return {
+    assessment: null,
+    label: `인포커터 선택 모드: ${currentFrameLabel()} / 범위가 넓을 수 있어 클릭 후 미리보기에서 다시 조정하세요.`,
+    selector: null
   };
 }
 
@@ -1219,16 +1279,15 @@ function startPicker(): void {
     overlay.style.width = `${rect.width}px`;
     overlay.style.height = `${rect.height}px`;
 
-    const hoverGroup = buildHoverGroupSelector(target);
-    applyHoverSelector(hoverGroup.selector);
-    if (hoverGroup.selector) {
-      setPickerLabelText(
-        `인포커터 선택 모드: ${currentFrameLabel()} / 같은 성격의 요소 ${hoverGroup.count}개가 함께 선택될 수 있습니다.`
-      );
+    const hoverSummary = buildHoverSummary(target);
+    applyHoverSelector(hoverSummary.selector);
+    setPickerLabelText(hoverSummary.label);
+    if (hoverSummary.assessment) {
+      setPickerStatusBadge(`선택 상태: ${hoverSummary.assessment.label}`, hoverSummary.assessment.tone);
       return;
     }
 
-    setPickerLabelText(`인포커터 선택 모드: ${currentFrameLabel()} / 현재 요소 하나를 기준으로 선택합니다.`);
+    setPickerStatusBadge("선택 상태: 범위 재조정 필요", "#fde68a");
   };
 
   const stopPicker = (): void => {
