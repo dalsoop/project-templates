@@ -1,4 +1,6 @@
 export type StoredRule = {
+  cardId: string;
+  cardName: string;
   createdAt: string;
   frameScope: string | null;
   selector: string;

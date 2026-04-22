@@ -42,6 +42,8 @@ function hostnameMatcher(url: string): string {
 function normalizeRule(rule: unknown): StoredRule | null {
   if (typeof rule === "string") {
     return {
+      cardId: generateId(),
+      cardName: "기본 카드",
       createdAt: new Date(0).toISOString(),
       frameScope: null,
       selector: rule
@@ -58,6 +60,8 @@ function normalizeRule(rule: unknown): StoredRule | null {
   }
 
   return {
+    cardId: typeof candidate.cardId === "string" ? candidate.cardId : generateId(),
+    cardName: typeof candidate.cardName === "string" && candidate.cardName.length > 0 ? candidate.cardName : "기본 카드",
     createdAt: typeof candidate.createdAt === "string" ? candidate.createdAt : new Date(0).toISOString(),
     frameScope: typeof candidate.frameScope === "string" ? candidate.frameScope : null,
     selector: candidate.selector
@@ -303,20 +307,36 @@ export async function moveProfile(profileId: string, direction: "up" | "down"): 
 }
 
 export async function addRuleToUrl(url: string, selector: string, frameScope: string | null): Promise<RuleProfile> {
+  return addCardToUrl(url, {
+    cardId: generateId(),
+    cardName: "기본 카드",
+    createdAt: new Date().toISOString(),
+    frameScope,
+    selector
+  });
+}
+
+export async function addCardToUrl(url: string, rule: StoredRule): Promise<RuleProfile> {
   const store = await readStore();
   const current = findMatchingProfile(store, url) ?? (await ensureProfileForUrl(url));
   const refreshedStore = await readStore();
   const profile = refreshedStore.profiles.find((item) => item.id === current.id) ?? current;
   const nextRule: StoredRule = {
-    createdAt: new Date().toISOString(),
-    frameScope,
-    selector
+    cardId: rule.cardId,
+    cardName: rule.cardName,
+    createdAt: rule.createdAt,
+    frameScope: rule.frameScope,
+    selector: rule.selector
   };
 
   const nextProfile: RuleProfile = {
     ...profile,
     enabled: true,
-    rules: profile.rules.some((rule) => rule.selector === selector && rule.frameScope === frameScope)
+    rules: profile.rules.some((existingRule) =>
+      existingRule.selector === nextRule.selector &&
+      existingRule.frameScope === nextRule.frameScope &&
+      existingRule.cardId === nextRule.cardId
+    )
       ? profile.rules
       : [...profile.rules, nextRule],
     updatedAt: new Date().toISOString()

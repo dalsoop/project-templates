@@ -7,6 +7,7 @@ const PICKER_PREVIEW_STYLE_ID = "infocutter-preview-style";
 const PICKER_PREVIEW_PANEL_ID = "infocutter-preview-panel";
 const PICKER_HOVER_STYLE_ID = "infocutter-hover-style";
 const PICKER_STATUS_BADGE_ID = "infocutter-status-badge";
+const PICKER_SESSION_PANEL_ID = "infocutter-session-panel";
 const PICKER_FRAME_MESSAGE_TYPE = "infocutter/start-picker-in-frame";
 const PICKER_FRAME_ACK_TYPE = "infocutter/start-picker-in-frame-ack";
 
@@ -36,6 +37,8 @@ type SiteRuleSet = {
   name: string;
   enabled: boolean;
   rules: {
+    cardId: string;
+    cardName: string;
     createdAt: string;
     frameScope: string | null;
     selector: string;
@@ -70,6 +73,13 @@ type ActiveSiteState = {
 
 let pickerStop: (() => void) | null = null;
 let lastContextTarget: Element | null = null;
+let selectionSession: {
+  cardId: string;
+  cardName: string;
+  createdAt: string;
+  frameScope: string | null;
+  selector: string;
+}[] = [];
 
 function generateId(): string {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
@@ -187,6 +197,8 @@ function normalizeSiteRuleSet(rawSiteRules: unknown): SiteRuleSet {
     .map((rule) => {
       if (typeof rule === "string") {
         return {
+          cardId: generateId(),
+          cardName: "기본 카드",
           createdAt: new Date(0).toISOString(),
           frameScope: null,
           selector: rule
@@ -198,6 +210,8 @@ function normalizeSiteRuleSet(rawSiteRules: unknown): SiteRuleSet {
       }
 
       const candidate = rule as {
+        cardId?: unknown;
+        cardName?: unknown;
         createdAt?: unknown;
         frameScope?: unknown;
         selector?: unknown;
@@ -208,6 +222,8 @@ function normalizeSiteRuleSet(rawSiteRules: unknown): SiteRuleSet {
       }
 
       return {
+        cardId: typeof candidate.cardId === "string" ? candidate.cardId : generateId(),
+        cardName: typeof candidate.cardName === "string" && candidate.cardName.length > 0 ? candidate.cardName : "기본 카드",
         createdAt: typeof candidate.createdAt === "string" ? candidate.createdAt : new Date(0).toISOString(),
         frameScope: typeof candidate.frameScope === "string" ? candidate.frameScope : null,
         selector: candidate.selector
@@ -329,12 +345,19 @@ async function ensureProfileForUrl(url: string): Promise<SiteRuleSet> {
   return profile;
 }
 
-async function addSiteRule(url: string, selector: string, frameScope: string | null): Promise<SiteRuleSet> {
+async function addSiteRule(
+  url: string,
+  selector: string,
+  frameScope: string | null,
+  card: { cardId: string; cardName: string }
+): Promise<SiteRuleSet> {
   const store = await readStore();
   const current = findMatchingProfile(store, url) ?? (await ensureProfileForUrl(url));
   const refreshedStore = await readStore();
   const profile = refreshedStore.profiles.find((item) => item.id === current.id) ?? current;
   const nextRule = {
+    cardId: card.cardId,
+    cardName: card.cardName,
     createdAt: new Date().toISOString(),
     frameScope,
     selector
@@ -342,7 +365,11 @@ async function addSiteRule(url: string, selector: string, frameScope: string | n
   const next: SiteRuleSet = {
     ...profile,
     enabled: true,
-    rules: profile.rules.some((rule) => rule.selector === selector && rule.frameScope === frameScope)
+    rules: profile.rules.some((rule) =>
+      rule.selector === selector &&
+      rule.frameScope === frameScope &&
+      rule.cardId === card.cardId
+    )
       ? profile.rules
       : [...profile.rules, nextRule],
     updatedAt: new Date().toISOString()
@@ -940,6 +967,117 @@ function elementShortLabel(element: Element): string {
   return element.localName;
 }
 
+function buildSessionPanel(onDone: () => void, onCancel: () => void): HTMLDivElement {
+  document.getElementById(PICKER_SESSION_PANEL_ID)?.remove();
+
+  const panel = document.createElement("div");
+  panel.id = PICKER_SESSION_PANEL_ID;
+  panel.style.position = "fixed";
+  panel.style.left = "16px";
+  panel.style.bottom = "16px";
+  panel.style.width = "320px";
+  panel.style.maxHeight = "50vh";
+  panel.style.overflow = "auto";
+  panel.style.padding = "12px";
+  panel.style.background = "#231f17";
+  panel.style.color = "#f7f4eb";
+  panel.style.zIndex = "2147483647";
+  panel.style.boxShadow = "0 12px 30px rgba(0,0,0,0.24)";
+  panel.style.font = '12px "SF Mono", "IBM Plex Mono", ui-monospace, monospace';
+
+  const title = document.createElement("div");
+  title.textContent = `선택 세션 카드 ${selectionSession.length}개`;
+  title.style.fontWeight = "700";
+  title.style.marginBottom = "8px";
+
+  const list = document.createElement("div");
+  list.style.display = "grid";
+  list.style.gap = "8px";
+  list.style.marginBottom = "10px";
+
+  for (const card of selectionSession) {
+    const item = document.createElement("div");
+    item.style.padding = "8px";
+    item.style.background = "rgba(255,255,255,0.08)";
+    item.style.border = "1px solid rgba(255,255,255,0.12)";
+
+    const name = document.createElement("div");
+    name.textContent = `카드: ${card.cardName}`;
+    name.style.fontWeight = "700";
+
+    const scope = document.createElement("div");
+    scope.textContent = card.frameScope ? `iframe: ${card.frameScope}` : "메인 문서";
+    scope.style.color = "#c9ba9c";
+    scope.style.marginTop = "4px";
+
+    const selector = document.createElement("code");
+    selector.textContent = card.selector;
+    selector.style.display = "block";
+    selector.style.marginTop = "6px";
+    selector.style.whiteSpace = "pre-wrap";
+    selector.style.wordBreak = "break-word";
+
+    const removeButton = document.createElement("button");
+    removeButton.type = "button";
+    removeButton.textContent = "카드 제거";
+    removeButton.style.marginTop = "8px";
+    removeButton.style.border = "1px solid #f7f4eb";
+    removeButton.style.background = "transparent";
+    removeButton.style.color = "#f7f4eb";
+    removeButton.style.padding = "6px 8px";
+    removeButton.style.cursor = "pointer";
+    removeButton.addEventListener("click", () => {
+      selectionSession = selectionSession.filter((entry) => entry.cardId !== card.cardId);
+      buildSessionPanel(onDone, onCancel);
+    });
+
+    item.append(name, scope, selector, removeButton);
+    list.append(item);
+  }
+
+  const actions = document.createElement("div");
+  actions.style.display = "flex";
+  actions.style.gap = "8px";
+
+  const doneButton = document.createElement("button");
+  doneButton.type = "button";
+  doneButton.textContent = "완료 적용";
+  doneButton.style.flex = "1";
+
+  const cancelButton = document.createElement("button");
+  cancelButton.type = "button";
+  cancelButton.textContent = "세션 취소";
+  cancelButton.style.flex = "1";
+
+  for (const button of [doneButton, cancelButton]) {
+    button.style.border = "1px solid #f7f4eb";
+    button.style.background = "transparent";
+    button.style.color = "#f7f4eb";
+    button.style.padding = "8px 10px";
+    button.style.cursor = "pointer";
+  }
+
+  doneButton.disabled = selectionSession.length === 0;
+  doneButton.addEventListener("click", onDone);
+  cancelButton.addEventListener("click", onCancel);
+
+  actions.append(doneButton, cancelButton);
+  panel.append(title, list, actions);
+  document.documentElement.append(panel);
+  return panel;
+}
+
+async function persistSelectionSession(): Promise<void> {
+  for (const card of selectionSession) {
+    await addSiteRule(ownerPageUrl(), card.selector, card.frameScope, {
+      cardId: card.cardId,
+      cardName: card.cardName
+    });
+  }
+
+  selectionSession = [];
+}
+
 function buildPreviewPanel(
   depthChain: Element[],
   depthIndex: number,
@@ -947,7 +1085,8 @@ function buildPreviewPanel(
   selector: string,
   index: number,
   total: number,
-  onApply: (selector: string) => void,
+  defaultCardName: string,
+  onAddCard: (selector: string, cardName: string) => void,
   onNarrow: () => void,
   onNext: () => void,
   onWider: () => void,
@@ -1008,6 +1147,20 @@ function buildPreviewPanel(
   assistMeta.style.color = "#c9ba9c";
   assistMeta.style.lineHeight = "1.45";
 
+  const cardNameInput = document.createElement("input");
+  cardNameInput.type = "text";
+  cardNameInput.value = defaultCardName;
+  cardNameInput.placeholder = "카드 이름";
+  cardNameInput.style.display = "block";
+  cardNameInput.style.width = "100%";
+  cardNameInput.style.boxSizing = "border-box";
+  cardNameInput.style.padding = "10px";
+  cardNameInput.style.background = "rgba(255,255,255,0.08)";
+  cardNameInput.style.color = "#f7f4eb";
+  cardNameInput.style.border = "1px solid rgba(255,255,255,0.18)";
+  cardNameInput.style.marginBottom = "10px";
+  cardNameInput.style.font = '12px "SF Mono", "IBM Plex Mono", ui-monospace, monospace';
+
   const input = document.createElement("textarea");
   input.value = selector;
   input.style.display = "block";
@@ -1028,10 +1181,10 @@ function buildPreviewPanel(
   actions.style.gap = "8px";
   actions.style.flexWrap = "wrap";
 
-  const applyButton = document.createElement("button");
-  applyButton.type = "button";
-  applyButton.textContent = "적용";
-  applyButton.style.flex = "1";
+  const addCardButton = document.createElement("button");
+  addCardButton.type = "button";
+  addCardButton.textContent = "카드에 추가";
+  addCardButton.style.flex = "1";
 
   const refreshButton = document.createElement("button");
   refreshButton.type = "button";
@@ -1061,7 +1214,7 @@ function buildPreviewPanel(
   cancelButton.textContent = "취소";
   cancelButton.style.flex = "1";
 
-  for (const button of [applyButton, refreshButton, narrowButton, nextButton, widerButton, cancelButton]) {
+  for (const button of [addCardButton, refreshButton, narrowButton, nextButton, widerButton, cancelButton]) {
     button.style.border = "1px solid #f7f4eb";
     button.style.background = "transparent";
     button.style.color = "#f7f4eb";
@@ -1085,7 +1238,7 @@ function buildPreviewPanel(
       qualityMeta.textContent = "상태: 비어 있음";
       qualityMeta.style.color = "#fca5a5";
       assistMeta.textContent = "안내: 선택자가 비어 있어 적용할 수 없습니다.";
-      applyButton.disabled = true;
+      addCardButton.disabled = true;
       applyPreviewSelector("__infocutter_invalid__");
       return;
     }
@@ -1095,7 +1248,7 @@ function buildPreviewPanel(
       qualityMeta.textContent = `상태: ${assessment.label}`;
       qualityMeta.style.color = assessment.tone;
       assistMeta.textContent = "안내: CSS 선택자 문법을 다시 확인하세요.";
-      applyButton.disabled = true;
+      addCardButton.disabled = true;
       applyPreviewSelector("__infocutter_invalid__");
       return;
     }
@@ -1104,14 +1257,14 @@ function buildPreviewPanel(
     qualityMeta.textContent = `상태: ${assessment.label}`;
     qualityMeta.style.color = assessment.tone;
     assistMeta.textContent = assessment.applyAllowed
-      ? "안내: 지금 상태에서 바로 적용해도 됩니다. 필요하면 더 넓게/좁게 또는 직접 편집하세요."
+      ? "안내: 이 선택자를 카드에 추가한 뒤, 세션 완료 버튼으로 한 번에 적용할 수 있습니다."
       : "안내: 현재 선택자는 범위가 너무 넓습니다. 더 좁게 가거나 다른 선택자로 바꾸세요.";
-    applyButton.disabled = !assessment.applyAllowed;
+    addCardButton.disabled = !assessment.applyAllowed;
     applyPreviewSelector(currentSelector);
   };
 
-  applyButton.addEventListener("click", () => {
-    onApply(input.value.trim());
+  addCardButton.addEventListener("click", () => {
+    onAddCard(input.value.trim(), cardNameInput.value.trim() || defaultCardName);
   });
   refreshButton.addEventListener("click", updatePreview);
   narrowButton.addEventListener("click", onNarrow);
@@ -1120,8 +1273,8 @@ function buildPreviewPanel(
   cancelButton.addEventListener("click", onCancel);
   input.addEventListener("input", updatePreview);
 
-  actions.append(applyButton, refreshButton, narrowButton, nextButton, widerButton, cancelButton);
-  panel.append(title, meta, depthMeta, breadcrumb, qualityMeta, assistMeta, input, actions);
+  actions.append(addCardButton, refreshButton, narrowButton, nextButton, widerButton, cancelButton);
+  panel.append(title, meta, depthMeta, breadcrumb, qualityMeta, assistMeta, cardNameInput, input, actions);
   document.documentElement.append(panel);
   updatePreview();
   return panel;
@@ -1377,12 +1530,30 @@ function startPicker(): void {
         selector,
         candidateIndex,
         candidates.length,
-        (selectedSelector) => {
-          void (async () => {
-            await addSiteRule(ownerPageUrl(), selectedSelector, currentFrameScope());
-            await renderRules();
-            stopPicker();
-          })();
+        elementShortLabel(focusElement),
+        (selectedSelector, cardName) => {
+          selectionSession.push({
+            cardId: generateId(),
+            cardName,
+            createdAt: new Date().toISOString(),
+            frameScope: currentFrameScope(),
+            selector: selectedSelector
+          });
+
+          buildSessionPanel(
+            () => {
+              void (async () => {
+                await persistSelectionSession();
+                await renderRules();
+                pickerStop?.();
+              })();
+            },
+            () => {
+              selectionSession = [];
+              pickerStop?.();
+            }
+          );
+          startPicker();
         },
         () => {
           depthIndex = Math.max(0, depthIndex - 1);
@@ -1410,11 +1581,28 @@ function startPicker(): void {
   document.addEventListener("mousemove", updateOverlay, true);
   document.addEventListener("click", handleClick, true);
   document.addEventListener("keydown", handleKeydown, true);
+
+  buildSessionPanel(
+    () => {
+      void (async () => {
+        await persistSelectionSession();
+        await renderRules();
+        pickerStop?.();
+      })();
+    },
+    () => {
+      selectionSession = [];
+      pickerStop?.();
+    }
+  );
 }
 
 async function hideTargetElement(target: Element): Promise<string> {
   const selector = buildSelector(target);
-  await addSiteRule(ownerPageUrl(), selector, currentFrameScope());
+  await addSiteRule(ownerPageUrl(), selector, currentFrameScope(), {
+    cardId: generateId(),
+    cardName: "기본 카드"
+  });
   await renderRules();
   return selector;
 }

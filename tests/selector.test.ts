@@ -20,6 +20,7 @@ void test("normalizeStore migrates version 1 shape to the current version", () =
       "example.com": {
         rules: [
           {
+            cardName: "기본 카드",
             createdAt: "1970-01-01T00:00:00.000Z",
             frameScope: null,
             selector: ".banner"
@@ -30,6 +31,9 @@ void test("normalizeStore migrates version 1 shape to the current version", () =
     }
   });
 
+  const migratedProfileId = migrated.profiles[0]?.id;
+  const migratedCardId = migrated.profiles[0]?.rules[0]?.cardId;
+
   assert.deepEqual(migrated, {
     version: 3,
     settings: {
@@ -37,12 +41,14 @@ void test("normalizeStore migrates version 1 shape to the current version", () =
     },
     profiles: [
       {
-        id: migrated.profiles[0]?.id,
+        id: migratedProfileId,
         matchers: ["https://example.com/*"],
         name: "example.com",
         enabled: true,
         rules: [
           {
+            cardId: migratedCardId,
+            cardName: "기본 카드",
             createdAt: "1970-01-01T00:00:00.000Z",
             frameScope: null,
             selector: ".banner"
