@@ -41,6 +41,24 @@ type MessagePayload = {
   selector?: string;
 };
 
+function isSupportedUrl(url?: string): boolean {
+  return typeof url === "string" && /^https?:\/\//.test(url);
+}
+
+function setUnsupportedState(url?: string): void {
+  siteLabelElement.textContent = url ?? "Unsupported page";
+  ruleCountElement.textContent = "Infocutter works on regular http and https pages only.";
+  siteStateElement.textContent = "This page cannot be modified";
+  globalStateElement.textContent = "Open a normal website to use picker mode";
+  pickButtonElement.disabled = true;
+  toggleSiteButtonElement.disabled = true;
+  toggleGlobalButtonElement.disabled = true;
+  clearButtonElement.disabled = true;
+  ruleListElement.replaceChildren();
+  emptyStateElement.hidden = false;
+  emptyStateElement.textContent = "Chrome internal pages and the Web Store are outside the extension target area.";
+}
+
 async function getActiveTab(): Promise<ActiveTab> {
   return new Promise((resolve, reject) => {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
@@ -150,6 +168,12 @@ function renderState(state: ActiveSiteState): void {
 
 async function refreshState(): Promise<void> {
   statusElement.textContent = "";
+  const tab = await getActiveTab();
+  if (!isSupportedUrl(tab.url)) {
+    setUnsupportedState(tab.url);
+    return;
+  }
+
   const state = await askContentScript<ActiveSiteState>(messageTypes.getPageState);
   renderState(state);
 }

@@ -7,6 +7,10 @@ const contextMenuIds = {
   startPicker: "infocutter-start-picker"
 } as const;
 
+function isSupportedUrl(url?: string): boolean {
+  return typeof url === "string" && /^https?:\/\//.test(url);
+}
+
 async function updateBadgeForTab(tabId: number, url?: string): Promise<void> {
   if (!url || !/^https?:\/\//.test(url)) {
     await chrome.action.setBadgeText({ tabId, text: "" });
@@ -72,7 +76,7 @@ chrome.runtime.onStartup.addListener(() => {
 });
 
 chrome.contextMenus.onClicked.addListener((info, tab) => {
-  if (!tab?.id) {
+  if (!tab?.id || !isSupportedUrl(tab.url)) {
     return;
   }
 
