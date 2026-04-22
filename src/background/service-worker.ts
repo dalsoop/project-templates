@@ -66,9 +66,51 @@ async function sendTabMessage(tabId: number, type: string): Promise<void> {
 
 async function ensureContentScript(tabId: number): Promise<void> {
   await chrome.scripting.executeScript({
-    target: { tabId },
+    target: { tabId, allFrames: true },
     files: ["src/content/index.js"]
   });
+}
+
+async function pingTab(tabId: number): Promise<boolean> {
+  try {
+    const response = await chrome.tabs.sendMessage(tabId, { type: messageTypes.ping });
+    return Boolean(response?.ok);
+  } catch {
+    return false;
+  }
+}
+
+async function ensureTabReady(tabId: number): Promise<boolean> {
+  const wasReady = await pingTab(tabId);
+  if (wasReady) {
+    return true;
+  }
+
+  await ensureContentScript(tabId);
+  return pingTab(tabId);
+}
+
+async function sendMessageToAllFrames(tabId: number, type: string): Promise<void> {
+  const frames = await chrome.webNavigation.getAllFrames({ tabId });
+  const resolvedFrames = frames ?? [];
+  const frameIds = resolvedFrames
+    .map((frame) => frame.frameId)
+    .filter((frameId): frameId is number => typeof frameId === "number");
+
+  if (frameIds.length === 0) {
+    await chrome.tabs.sendMessage(tabId, { type });
+    return;
+  }
+
+  await Promise.all(
+    frameIds.map(async (frameId) => {
+      try {
+        await chrome.tabs.sendMessage(tabId, { type }, { frameId });
+      } catch {
+        // Ignore per-frame failures.
+      }
+    })
+  );
 }
 
 chrome.runtime.onInstalled.addListener(() => {
@@ -100,11 +142,92 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
 
   if (info.menuItemId === contextMenuIds.startPicker) {
     void ensureContentScript(tabId)
-      .then(async () => sendTabMessage(tabId, messageTypes.startPicker))
+      .then(async () => sendMessageToAllFrames(tabId, messageTypes.startPicker))
       .catch((error: unknown) => {
       console.warn("인포커터 선택 모드 시작에 실패했습니다", error);
     });
   }
+});
+
+chrome.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) => {
+  void (async () => {
+    if (!message || typeof message !== "object") {
+      sendResponse({ ok: false });
+      return;
+    }
+
+    const type = "type" in message ? message.type : null;
+    const tabId = "tabId" in message && typeof message.tabId === "number" ? message.tabId : null;
+    const url = "url" in message && typeof message.url === "string" ? message.url : undefined;
+
+    if (tabId === null) {
+      sendResponse({ ok: false });
+      return;
+    }
+
+    if (type === messageTypes.ensureTabReady) {
+      sendResponse({ ok: await ensureTabReady(tabId) });
+      return;
+    }
+
+    if (type === messageTypes.runDiagnostics) {
+      if (!isSupportedUrl(url)) {
+        sendResponse({
+          ok: true,
+          data: "진단 결과: 이 페이지는 확장 대상이 아닙니다."
+        });
+        return;
+      }
+
+      const wasReady = await pingTab(tabId);
+      if (wasReady) {
+        sendResponse({
+          ok: true,
+          data: "진단 결과: 콘텐츠 스크립트가 이미 연결되어 있습니다."
+        });
+        return;
+      }
+
+      const ready = await ensureTabReady(tabId);
+      sendResponse({
+        ok: true,
+        data: ready
+          ? "진단 결과: 콘텐츠 스크립트를 다시 연결했습니다."
+          : "진단 결과: 콘텐츠 스크립트 연결에 실패했습니다."
+      });
+      return;
+    }
+
+    if (type === messageTypes.startPickerFlow) {
+      if (!isSupportedUrl(url)) {
+        sendResponse({
+          ok: false,
+          data: "이 페이지는 선택 모드를 지원하지 않습니다."
+        });
+        return;
+      }
+
+      const ready = await ensureTabReady(tabId);
+      if (!ready) {
+        sendResponse({
+          ok: false,
+          data: "콘텐츠 스크립트를 연결하지 못했습니다."
+        });
+        return;
+      }
+
+      await sendMessageToAllFrames(tabId, messageTypes.startPicker);
+      sendResponse({ ok: true });
+      return;
+    }
+
+    sendResponse({ ok: false });
+  })().catch((error: unknown) => {
+    console.warn("인포커터 백그라운드 메시지 처리에 실패했습니다", error);
+    sendResponse({ ok: false });
+  });
+
+  return true;
 });
 
 chrome.tabs.onActivated.addListener(({ tabId }) => {

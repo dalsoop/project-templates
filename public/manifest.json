@@ -4,7 +4,7 @@
   "description": "사이트별로 선택자를 저장해 웹페이지 요소를 숨기는 확장 프로그램입니다.",
   "version": "0.1.0",
   "minimum_chrome_version": "120",
-  "permissions": ["storage", "tabs", "contextMenus", "scripting"],
+  "permissions": ["storage", "tabs", "contextMenus", "scripting", "webNavigation"],
   "host_permissions": ["http://*/*", "https://*/*"],
   "icons": {
     "16": "public/icons/icon-16.png",
@@ -27,6 +27,7 @@
   "content_scripts": [
     {
       "matches": ["http://*/*", "https://*/*"],
+      "all_frames": true,
       "js": ["src/content/index.js"],
       "run_at": "document_idle"
     }

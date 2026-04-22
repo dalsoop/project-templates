@@ -106,22 +106,22 @@ async function sendMessageToTab(
   });
 }
 
-function hasScriptingApi(): boolean {
-  try {
-    return typeof Reflect.get(Reflect.get(chrome, "scripting"), "executeScript") === "function";
-  } catch {
-    return false;
-  }
-}
+async function sendRuntimeMessage<T>(message: Record<string, unknown>): Promise<T> {
+  return new Promise((resolve, reject) => {
+    chrome.runtime.sendMessage(message, (response: unknown) => {
+      const error = chrome.runtime.lastError;
+      if (error) {
+        reject(new Error(error.message));
+        return;
+      }
 
-async function ensureContentScript(tabId: number): Promise<void> {
-  if (!hasScriptingApi()) {
-    throw new Error("확장 기능을 다시 불러와야 합니다. chrome://extensions 에서 인포커터를 새로고침한 뒤 다시 시도하세요.");
-  }
+      if (!response || typeof response !== "object") {
+        reject(new Error("백그라운드 메시지 처리에 실패했습니다."));
+        return;
+      }
 
-  await chrome.scripting.executeScript({
-    target: { tabId },
-    files: ["src/content/index.js"]
+      resolve(response as T);
+    });
   });
 }
 
@@ -135,12 +135,16 @@ async function pingContentScript(tabId: number): Promise<boolean> {
 }
 
 async function ensureConnectedTab(tabId: number): Promise<void> {
-  const isReady = await pingContentScript(tabId);
-  if (isReady) {
+  const response = await sendRuntimeMessage<{ ok: boolean }>({
+    type: messageTypes.ensureTabReady,
+    tabId
+  });
+
+  if (response.ok) {
     return;
   }
 
-  await ensureContentScript(tabId);
+  throw new Error("콘텐츠 스크립트를 연결하지 못했습니다.");
 }
 
 async function runDiagnostics(): Promise<void> {
@@ -150,23 +154,13 @@ async function runDiagnostics(): Promise<void> {
     return;
   }
 
-  if (!hasScriptingApi()) {
-    debugSummaryElement.textContent =
-      "진단 결과: scripting API를 찾을 수 없습니다. chrome://extensions 에서 인포커터를 새로고침하세요.";
-    return;
-  }
+  const response = await sendRuntimeMessage<{ ok: boolean; data?: string }>({
+    type: messageTypes.runDiagnostics,
+    tabId: tab.id,
+    url: tab.url
+  });
 
-  const beforeInjection = await pingContentScript(tab.id);
-  if (beforeInjection) {
-    debugSummaryElement.textContent = "진단 결과: 콘텐츠 스크립트가 이미 연결되어 있습니다.";
-    return;
-  }
-
-  await ensureContentScript(tab.id);
-  const afterInjection = await pingContentScript(tab.id);
-  debugSummaryElement.textContent = afterInjection
-    ? "진단 결과: 콘텐츠 스크립트를 다시 연결했습니다."
-    : "진단 결과: 콘텐츠 스크립트 연결에 실패했습니다.";
+  debugSummaryElement.textContent = response.data ?? "진단 결과를 확인하지 못했습니다.";
 }
 
 async function askContentScript<T>(type: string): Promise<T> {
@@ -254,8 +248,14 @@ async function refreshState(): Promise<void> {
 pickButtonElement.addEventListener("click", () => {
   void (async () => {
     const tab = await getActiveTab();
-    await ensureConnectedTab(tab.id);
-    await sendMessageToTab(tab.id, messageTypes.startPicker);
+    const response = await sendRuntimeMessage<{ ok: boolean; data?: string }>({
+      type: messageTypes.startPickerFlow,
+      tabId: tab.id,
+      url: tab.url
+    });
+    if (!response.ok) {
+      throw new Error(response.data ?? "선택 모드 시작에 실패했습니다.");
+    }
     statusElement.textContent = "선택 모드를 시작했습니다. 페이지로 돌아가서 숨길 요소를 클릭하세요.";
   })().catch((error: unknown) => {
     statusElement.textContent = error instanceof Error ? error.message : "선택 모드 시작에 실패했습니다.";
