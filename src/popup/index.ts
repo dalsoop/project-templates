@@ -44,9 +44,6 @@ type MessagePayload = {
   enabled?: boolean;
   selector?: string;
 };
-type ScriptingApi = {
-  executeScript: (injection: unknown) => Promise<unknown>;
-};
 
 function isSupportedUrl(url?: string): boolean {
   return typeof url === "string" && /^https?:\/\//.test(url);
@@ -109,26 +106,25 @@ async function sendMessageToTab(
   });
 }
 
-function getScriptingApi(): ScriptingApi | null {
+function hasScriptingApi(): boolean {
   const scriptingApi = Reflect.get(chrome, "scripting");
   if (!scriptingApi || typeof scriptingApi !== "object") {
-    return null;
+    return false;
   }
 
   if (!("executeScript" in scriptingApi) || typeof scriptingApi.executeScript !== "function") {
-    return null;
+    return false;
   }
 
-  return scriptingApi as ScriptingApi;
+  return true;
 }
 
 async function ensureContentScript(tabId: number): Promise<void> {
-  const scriptingApi = getScriptingApi();
-  if (!scriptingApi) {
+  if (!hasScriptingApi()) {
     throw new Error("확장 기능을 다시 불러와야 합니다. chrome://extensions 에서 인포커터를 새로고침한 뒤 다시 시도하세요.");
   }
 
-  await scriptingApi.executeScript({
+  await chrome.scripting.executeScript({
     target: { tabId },
     files: ["src/content/index.js"]
   });
@@ -159,7 +155,7 @@ async function runDiagnostics(): Promise<void> {
     return;
   }
 
-  if (!getScriptingApi()) {
+  if (!hasScriptingApi()) {
     debugSummaryElement.textContent =
       "진단 결과: scripting API를 찾을 수 없습니다. chrome://extensions 에서 인포커터를 새로고침하세요.";
     return;
