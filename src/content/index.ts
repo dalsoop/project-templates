@@ -624,7 +624,15 @@ function buildPickerLabel(): HTMLDivElement {
   return label;
 }
 
-function applyPreviewSelector(selector: string): void {
+function matchCountForSelector(selector: string): number | null {
+  try {
+    return document.querySelectorAll(selector).length;
+  } catch {
+    return null;
+  }
+}
+
+function applyPreviewSelector(selector: string): boolean {
   let style = document.getElementById(PICKER_PREVIEW_STYLE_ID);
   if (!(style instanceof HTMLStyleElement)) {
     style = document.createElement("style");
@@ -632,16 +640,47 @@ function applyPreviewSelector(selector: string): void {
     document.documentElement.append(style);
   }
 
+  if (matchCountForSelector(selector) === null) {
+    style.textContent = "";
+    return false;
+  }
+
   style.textContent = `${selector} { display: none !important; }`;
+  return true;
+}
+
+function buildDepthChain(element: Element, maxDepth = 4): Element[] {
+  const chain: Element[] = [element];
+  let current = element.parentElement;
+  let depth = 0;
+
+  while (current && current !== document.documentElement && depth < maxDepth) {
+    chain.push(current);
+    current = current.parentElement;
+    depth += 1;
+  }
+
+  return chain;
+}
+
+function depthLabel(depthIndex: number): string {
+  if (depthIndex === 0) {
+    return "현재 요소";
+  }
+
+  return `부모 ${depthIndex}단계`;
 }
 
 function buildPreviewPanel(
+  depthIndex: number,
+  depthTotal: number,
   selector: string,
   index: number,
   total: number,
-  matches: number,
-  onApply: () => void,
+  onApply: (selector: string) => void,
+  onNarrow: () => void,
   onNext: () => void,
+  onWider: () => void,
   onCancel: () => void
 ): HTMLDivElement {
   document.getElementById(PICKER_PREVIEW_PANEL_ID)?.remove();
@@ -665,27 +704,50 @@ function buildPreviewPanel(
   title.style.marginBottom = "8px";
 
   const meta = document.createElement("div");
-  meta.textContent = `현재 선택자는 ${matches}개 요소에 적용됩니다.`;
+  meta.textContent = `${depthLabel(depthIndex)} · 현재 선택자를 확인하는 중입니다.`;
   meta.style.marginBottom = "8px";
   meta.style.color = "#f5d6b0";
 
-  const code = document.createElement("code");
-  code.textContent = selector;
-  code.style.display = "block";
-  code.style.whiteSpace = "pre-wrap";
-  code.style.wordBreak = "break-word";
-  code.style.padding = "10px";
-  code.style.background = "rgba(255,255,255,0.08)";
-  code.style.marginBottom = "10px";
+  const depthMeta = document.createElement("div");
+  depthMeta.textContent = `범위 단계 ${depthIndex + 1}/${depthTotal}`;
+  depthMeta.style.marginBottom = "8px";
+  depthMeta.style.color = "#c9ba9c";
+
+  const input = document.createElement("textarea");
+  input.value = selector;
+  input.style.display = "block";
+  input.style.width = "100%";
+  input.style.minHeight = "84px";
+  input.style.boxSizing = "border-box";
+  input.style.whiteSpace = "pre-wrap";
+  input.style.wordBreak = "break-word";
+  input.style.padding = "10px";
+  input.style.background = "rgba(255,255,255,0.08)";
+  input.style.color = "#f7f4eb";
+  input.style.border = "1px solid rgba(255,255,255,0.18)";
+  input.style.marginBottom = "10px";
+  input.style.font = '12px "SF Mono", "IBM Plex Mono", ui-monospace, monospace';
 
   const actions = document.createElement("div");
   actions.style.display = "flex";
   actions.style.gap = "8px";
+  actions.style.flexWrap = "wrap";
 
   const applyButton = document.createElement("button");
   applyButton.type = "button";
   applyButton.textContent = "적용";
   applyButton.style.flex = "1";
+
+  const refreshButton = document.createElement("button");
+  refreshButton.type = "button";
+  refreshButton.textContent = "선택자 갱신";
+  refreshButton.style.flex = "1";
+
+  const narrowButton = document.createElement("button");
+  narrowButton.type = "button";
+  narrowButton.textContent = "더 좁게";
+  narrowButton.disabled = depthIndex === 0;
+  narrowButton.style.flex = "1";
 
   const nextButton = document.createElement("button");
   nextButton.type = "button";
@@ -693,12 +755,18 @@ function buildPreviewPanel(
   nextButton.disabled = total <= 1;
   nextButton.style.flex = "1";
 
+  const widerButton = document.createElement("button");
+  widerButton.type = "button";
+  widerButton.textContent = "더 넓게";
+  widerButton.disabled = depthIndex >= depthTotal - 1;
+  widerButton.style.flex = "1";
+
   const cancelButton = document.createElement("button");
   cancelButton.type = "button";
   cancelButton.textContent = "취소";
   cancelButton.style.flex = "1";
 
-  for (const button of [applyButton, nextButton, cancelButton]) {
+  for (const button of [applyButton, refreshButton, narrowButton, nextButton, widerButton, cancelButton]) {
     button.style.border = "1px solid #f7f4eb";
     button.style.background = "transparent";
     button.style.color = "#f7f4eb";
@@ -706,13 +774,43 @@ function buildPreviewPanel(
     button.style.cursor = "pointer";
   }
 
-  applyButton.addEventListener("click", onApply);
-  nextButton.addEventListener("click", onNext);
-  cancelButton.addEventListener("click", onCancel);
+  const updatePreview = (): void => {
+    const currentSelector = input.value.trim();
+    const matches = currentSelector ? matchCountForSelector(currentSelector) : null;
 
-  actions.append(applyButton, nextButton, cancelButton);
-  panel.append(title, meta, code, actions);
+    if (!currentSelector) {
+      meta.textContent = `${depthLabel(depthIndex)} · 선택자가 비어 있습니다.`;
+      applyButton.disabled = true;
+      applyPreviewSelector("__infocutter_invalid__");
+      return;
+    }
+
+    if (matches === null) {
+      meta.textContent = `${depthLabel(depthIndex)} · 올바르지 않은 선택자입니다.`;
+      applyButton.disabled = true;
+      applyPreviewSelector("__infocutter_invalid__");
+      return;
+    }
+
+    meta.textContent = `${depthLabel(depthIndex)} · 현재 선택자는 ${matches}개 요소에 적용됩니다.`;
+    applyButton.disabled = false;
+    applyPreviewSelector(currentSelector);
+  };
+
+  applyButton.addEventListener("click", () => {
+    onApply(input.value.trim());
+  });
+  refreshButton.addEventListener("click", updatePreview);
+  narrowButton.addEventListener("click", onNarrow);
+  nextButton.addEventListener("click", onNext);
+  widerButton.addEventListener("click", onWider);
+  cancelButton.addEventListener("click", onCancel);
+  input.addEventListener("input", updatePreview);
+
+  actions.append(applyButton, refreshButton, narrowButton, nextButton, widerButton, cancelButton);
+  panel.append(title, meta, depthMeta, input, actions);
   document.documentElement.append(panel);
+  updatePreview();
   return panel;
 }
 
@@ -937,26 +1035,40 @@ function startPicker(): void {
       return;
     }
 
-    const candidates = buildSelectorCandidates(target);
+    const depthChain = buildDepthChain(target);
+    let depthIndex = 0;
     let candidateIndex = 0;
 
     const renderCandidate = (): void => {
-      const selector = candidates[candidateIndex] ?? buildSelector(target);
+      const focusElement = depthChain[depthIndex] ?? target;
+      const candidates = buildSelectorCandidates(focusElement);
+      const selector = candidates[candidateIndex] ?? buildSelector(focusElement);
       applyPreviewSelector(selector);
       buildPreviewPanel(
+        depthIndex,
+        depthChain.length,
         selector,
         candidateIndex,
         candidates.length,
-        document.querySelectorAll(selector).length,
-        () => {
+        (selectedSelector) => {
           void (async () => {
-            await addSiteRule(ownerPageUrl(), selector, currentFrameScope());
+            await addSiteRule(ownerPageUrl(), selectedSelector, currentFrameScope());
             await renderRules();
             stopPicker();
           })();
         },
         () => {
+          depthIndex = Math.max(0, depthIndex - 1);
+          candidateIndex = 0;
+          renderCandidate();
+        },
+        () => {
           candidateIndex = (candidateIndex + 1) % candidates.length;
+          renderCandidate();
+        },
+        () => {
+          depthIndex = Math.min(depthChain.length - 1, depthIndex + 1);
+          candidateIndex = 0;
           renderCandidate();
         },
         () => {

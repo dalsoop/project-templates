@@ -108,6 +108,23 @@ async function deleteRule(profileId: string, targetRule: StoredRule): Promise<vo
   }));
 }
 
+async function editRule(profileId: string, targetRule: StoredRule, selector: string): Promise<void> {
+  await updateProfile(profileId, (profile) => ({
+    ...profile,
+    rules: profile.rules.map((rule) => (
+      rule.createdAt === targetRule.createdAt &&
+      rule.frameScope === targetRule.frameScope &&
+      rule.selector === targetRule.selector
+        ? {
+          ...rule,
+          selector: selector.trim() || rule.selector
+        }
+        : rule
+    )),
+    updatedAt: new Date().toISOString()
+  }));
+}
+
 async function clearProfile(profileId: string): Promise<void> {
   await updateProfile(profileId, (profile) => ({
     ...profile,
@@ -272,12 +289,23 @@ async function render(): Promise<void> {
       metaText.className = "options__rule-meta";
       metaText.textContent = `생성 시각: ${rule.createdAt}`;
 
-      const code = document.createElement("code");
-      code.className = "options__rule-code";
-      code.textContent = rule.selector;
+      const code = document.createElement("textarea");
+      code.className = "options__input options__rule-editor";
+      code.value = rule.selector;
 
       const actions = document.createElement("div");
       actions.className = "options__rule-actions";
+
+      const saveButton = document.createElement("button");
+      saveButton.type = "button";
+      saveButton.textContent = "저장";
+      saveButton.className = "options__secondary";
+      saveButton.addEventListener("click", () => {
+        void (async () => {
+          await editRule(profile.id, rule, code.value);
+          await render();
+        })();
+      });
 
       const deleteButton = document.createElement("button");
       deleteButton.type = "button";
@@ -290,7 +318,7 @@ async function render(): Promise<void> {
         })();
       });
 
-      actions.append(deleteButton);
+      actions.append(saveButton, deleteButton);
       item.append(scopeText, metaText, code, actions);
       list.append(item);
     }

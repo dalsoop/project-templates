@@ -192,6 +192,13 @@ button {
   word-break: break-word;
 }
 
+.options__rule-editor {
+  width: 100%;
+  min-height: 80px;
+  box-sizing: border-box;
+  resize: vertical;
+}
+
 .options__empty {
   margin: 0;
   color: #5b4e3f;
