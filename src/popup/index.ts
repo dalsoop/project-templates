@@ -45,9 +45,7 @@ type MessagePayload = {
   selector?: string;
 };
 type ScriptingApi = {
-  executeScript: (
-    injection: chrome.scripting.ScriptInjection<() => void> | chrome.scripting.ScriptInjection<unknown[], unknown>
-  ) => Promise<unknown>;
+  executeScript: (injection: unknown) => Promise<unknown>;
 };
 
 function isSupportedUrl(url?: string): boolean {
