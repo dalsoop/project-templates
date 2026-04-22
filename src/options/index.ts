@@ -1,5 +1,5 @@
 import type { RuleProfile, RuleStore, StoredRule } from "../shared/types.js";
-import { createProfile, deleteProfile, findMatchingProfile, moveProfile, normalizeStore, renameCardInProfile, removeCardFromProfile, renameProfile, setProfileMatchers, writeStore } from "../shared/storage.js";
+import { createProfile, deleteProfile, findMatchingProfile, groupRulesByCard, moveProfile, normalizeStore, renameCardInProfile, removeCardFromProfile, renameProfile, setCardEnabled, setProfileMatchers, writeStore } from "../shared/storage.js";
 
 const STORAGE_KEY = "infocutter.ruleStore";
 
@@ -83,8 +83,29 @@ function matchesSearch(rule: StoredRule, profile: RuleProfile, keyword: string):
   return (
     profile.name.toLowerCase().includes(keyword) ||
     profileMatchersLabel(profile).toLowerCase().includes(keyword) ||
+    rule.cardName.toLowerCase().includes(keyword) ||
     rule.selector.includes(keyword) ||
     (rule.frameScope?.includes(keyword) ?? false)
+  );
+}
+
+function matchesProfileSearch(profile: RuleProfile, keyword: string): boolean {
+  if (!keyword) {
+    return true;
+  }
+
+  return (
+    profile.name.toLowerCase().includes(keyword) ||
+    profileMatchersLabel(profile).toLowerCase().includes(keyword)
+  );
+}
+
+function isSameStoredRule(rule: StoredRule, targetRule: StoredRule): boolean {
+  return (
+    rule.cardId === targetRule.cardId &&
+    rule.createdAt === targetRule.createdAt &&
+    rule.frameScope === targetRule.frameScope &&
+    rule.selector === targetRule.selector
   );
 }
 
@@ -101,9 +122,7 @@ async function updateProfile(profileId: string, updater: (profile: RuleProfile) 
 async function deleteRule(profileId: string, targetRule: StoredRule): Promise<void> {
   await updateProfile(profileId, (profile) => ({
     ...profile,
-    rules: profile.rules.filter(
-      (rule) => !(rule.selector === targetRule.selector && rule.frameScope === targetRule.frameScope)
-    ),
+    rules: profile.rules.filter((rule) => !isSameStoredRule(rule, targetRule)),
     updatedAt: new Date().toISOString()
   }));
 }
@@ -112,13 +131,11 @@ async function editRule(profileId: string, targetRule: StoredRule, selector: str
   await updateProfile(profileId, (profile) => ({
     ...profile,
     rules: profile.rules.map((rule) => (
-      rule.createdAt === targetRule.createdAt &&
-      rule.frameScope === targetRule.frameScope &&
-      rule.selector === targetRule.selector
+      isSameStoredRule(rule, targetRule)
         ? {
-          ...rule,
-          selector: selector.trim() || rule.selector
-        }
+            ...rule,
+            selector: selector.trim() || rule.selector
+          }
         : rule
     )),
     updatedAt: new Date().toISOString()
@@ -151,10 +168,12 @@ async function render(): Promise<void> {
 
   const profileCards: HTMLElement[] = [];
   let totalVisibleRules = 0;
+  let totalVisibleCards = 0;
 
   for (const [profileIndex, profile] of store.profiles.entries()) {
     const rules = profile.rules.filter((rule) => matchesScopeFilter(rule, scope) && matchesSearch(rule, profile, keyword));
-    if (rules.length === 0) {
+    const profileMatches = matchesProfileSearch(profile, keyword);
+    if (!profileMatches && rules.length === 0) {
       continue;
     }
 
@@ -173,7 +192,7 @@ async function render(): Promise<void> {
 
     const subtitle = document.createElement("p");
     subtitle.className = "options__site-subtitle";
-    subtitle.textContent = `${profile.enabled ? "프로필 사용 중" : "프로필 꺼짐"} · 매처 ${profileMatchersLabel(profile)} · 규칙 ${rules.length}개 표시`;
+    subtitle.textContent = `${profile.enabled ? "프로필 사용 중" : "프로필 꺼짐"} · 매처 ${profileMatchersLabel(profile)} · 카드 ${groupRulesByCard(profile.rules, profile.cards).length}개 · 규칙 ${profile.rules.length}개`;
 
     const priorityBadge = document.createElement("div");
     priorityBadge.className = "options__priority-badge";
@@ -277,19 +296,24 @@ async function render(): Promise<void> {
     const list = document.createElement("ul");
     list.className = "options__rule-list";
 
-    const cards = Array.from(
-      rules.reduce((map, rule) => {
-        const current = map.get(rule.cardId) ?? {
-          cardId: rule.cardId,
-          cardName: rule.cardName,
-          rules: [] as typeof rules
-        };
-        current.rules.push(rule);
-        map.set(rule.cardId, current);
-        return map;
-      }, new Map<string, { cardId: string; cardName: string; rules: typeof rules }>())
-        .values()
-    );
+    const cards = groupRulesByCard(rules, profile.cards);
+    totalVisibleCards += cards.length;
+
+    if (cards.length === 0) {
+      const emptyCard = document.createElement("li");
+      emptyCard.className = "options__rule-item";
+
+      const emptyTitle = document.createElement("p");
+      emptyTitle.className = "options__rule-meta";
+      emptyTitle.textContent = "이 프로파일에는 아직 카드가 없습니다.";
+
+      const emptyGuide = document.createElement("p");
+      emptyGuide.className = "options__rule-meta";
+      emptyGuide.textContent = "선택 모드에서 오브젝트를 카드로 추가하면 여기에서 이름과 규칙을 관리할 수 있습니다.";
+
+      emptyCard.append(emptyTitle, emptyGuide);
+      list.append(emptyCard);
+    }
 
     for (const cardGroup of cards) {
       const item = document.createElement("li");
@@ -302,10 +326,21 @@ async function render(): Promise<void> {
 
       const cardMeta = document.createElement("p");
       cardMeta.className = "options__rule-meta";
-      cardMeta.textContent = `카드 규칙 ${cardGroup.rules.length}개`;
+      cardMeta.textContent = `카드 규칙 ${cardGroup.rules.length}개 · 카드 ID ${cardGroup.cardId} · ${cardGroup.enabled ? "활성" : "비활성"}`;
 
       const cardActions = document.createElement("div");
       cardActions.className = "options__rule-actions";
+
+      const toggleCardButton = document.createElement("button");
+      toggleCardButton.type = "button";
+      toggleCardButton.textContent = cardGroup.enabled ? "카드 끄기" : "카드 켜기";
+      toggleCardButton.className = "options__secondary";
+      toggleCardButton.addEventListener("click", () => {
+        void (async () => {
+          await setCardEnabled(profile.id, cardGroup.cardId, !cardGroup.enabled);
+          await render();
+        })();
+      });
 
       const saveCardButton = document.createElement("button");
       saveCardButton.type = "button";
@@ -329,7 +364,7 @@ async function render(): Promise<void> {
         })();
       });
 
-      cardActions.append(saveCardButton, deleteCardButton);
+      cardActions.append(toggleCardButton, saveCardButton, deleteCardButton);
       item.append(cardNameInput, cardMeta, cardActions);
 
       const innerList = document.createElement("div");
@@ -394,7 +429,7 @@ async function render(): Promise<void> {
 
   siteListElement.replaceChildren(...profileCards);
   emptyStateElement.hidden = profileCards.length > 0;
-  summaryElement.textContent = `표시 중인 프로필 ${profileCards.length}개 / 규칙 ${totalVisibleRules}개`;
+  summaryElement.textContent = `표시 중인 프로필 ${profileCards.length}개 / 카드 ${totalVisibleCards}개 / 규칙 ${totalVisibleRules}개`;
 
   const testUrl = urlTestInputElement.value.trim();
   if (testUrl) {

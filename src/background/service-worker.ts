@@ -1,5 +1,5 @@
 import { messageTypes } from "../shared/messages.js";
-import { findMatchingProfile, readStore } from "../shared/storage.js";
+import { findMatchingProfile, getEnabledRules, readStore } from "../shared/storage.js";
 
 const contextMenuIds = {
   root: "infocutter-root",
@@ -19,28 +19,60 @@ function isSupportedUrl(url?: string): boolean {
   return typeof url === "string" && /^https?:\/\//.test(url);
 }
 
+function isMissingTabError(error: unknown): boolean {
+  return error instanceof Error && error.message.includes("No tab with id");
+}
+
+async function doesTabExist(tabId: number): Promise<boolean> {
+  try {
+    await chrome.tabs.get(tabId);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function runBadgeOperation(operation: () => Promise<void>): Promise<void> {
+  try {
+    await operation();
+  } catch (error) {
+    if (isMissingTabError(error)) {
+      return;
+    }
+
+    throw error;
+  }
+}
+
 async function updateBadgeForTab(tabId: number, url?: string): Promise<void> {
+  const exists = await doesTabExist(tabId);
+  if (!exists) {
+    pickerFocusByTab.delete(tabId);
+    return;
+  }
+
   if (!url || !/^https?:\/\//.test(url)) {
-    await chrome.action.setBadgeText({ tabId, text: "" });
+    await runBadgeOperation(() => chrome.action.setBadgeText({ tabId, text: "" }));
     return;
   }
 
   const store = await readStore();
   const profile = findMatchingProfile(store, url);
+  const enabledRules = getEnabledRules(profile);
 
-  if (!store.settings.globalEnabled || !profile || !profile.enabled || profile.rules.length === 0) {
-    await chrome.action.setBadgeText({ tabId, text: "" });
+  if (!store.settings.globalEnabled || !profile || !profile.enabled || enabledRules.length === 0) {
+    await runBadgeOperation(() => chrome.action.setBadgeText({ tabId, text: "" }));
     return;
   }
 
-  await chrome.action.setBadgeBackgroundColor({
+  await runBadgeOperation(() => chrome.action.setBadgeBackgroundColor({
     tabId,
     color: "#8f2d1d"
-  });
-  await chrome.action.setBadgeText({
+  }));
+  await runBadgeOperation(() => chrome.action.setBadgeText({
     tabId,
-    text: String(Math.min(profile.rules.length, 99))
-  });
+    text: String(Math.min(enabledRules.length, 99))
+  }));
 }
 
 function createContextMenus(): void {
@@ -302,15 +334,35 @@ chrome.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) =
 });
 
 chrome.tabs.onActivated.addListener(({ tabId }) => {
-  void chrome.tabs.get(tabId).then(async (tab) => {
-    await updateBadgeForTab(tabId, tab.url);
-  });
+  void chrome.tabs.get(tabId)
+    .then(async (tab) => {
+      await updateBadgeForTab(tabId, tab.url);
+    })
+    .catch((error: unknown) => {
+      if (isMissingTabError(error)) {
+        pickerFocusByTab.delete(tabId);
+        return;
+      }
+
+      console.warn("인포커터 활성 탭 배지 갱신에 실패했습니다", error);
+    });
 });
 
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   if (changeInfo.status === "complete" || changeInfo.url) {
-    void updateBadgeForTab(tabId, tab.url);
+    void updateBadgeForTab(tabId, tab.url).catch((error: unknown) => {
+      if (isMissingTabError(error)) {
+        pickerFocusByTab.delete(tabId);
+        return;
+      }
+
+      console.warn("인포커터 탭 업데이트 배지 갱신에 실패했습니다", error);
+    });
   }
+});
+
+chrome.tabs.onRemoved.addListener((tabId) => {
+  pickerFocusByTab.delete(tabId);
 });
 
 chrome.storage.onChanged.addListener((_changes, areaName) => {
@@ -318,11 +370,15 @@ chrome.storage.onChanged.addListener((_changes, areaName) => {
     return;
   }
 
-  void chrome.tabs.query({}).then(async (tabs) => {
-    await Promise.all(
-      tabs
-        .filter((tab): tab is chrome.tabs.Tab & { id: number } => tab.id !== undefined)
-        .map(async (tab) => updateBadgeForTab(tab.id, tab.url))
-    );
-  });
+  void chrome.tabs.query({})
+    .then(async (tabs) => {
+      await Promise.all(
+        tabs
+          .filter((tab): tab is chrome.tabs.Tab & { id: number } => tab.id !== undefined)
+          .map(async (tab) => updateBadgeForTab(tab.id, tab.url))
+      );
+    })
+    .catch((error: unknown) => {
+      console.warn("인포커터 저장소 변경 후 배지 재계산에 실패했습니다", error);
+    });
 });

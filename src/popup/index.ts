@@ -49,6 +49,8 @@ const debugButtonElement = assertElement(debugButton, "debug-button") as HTMLBut
 
 type ActiveTab = chrome.tabs.Tab & { id: number };
 type MessagePayload = {
+  cardId?: string;
+  createdAt?: string;
   enabled?: boolean;
   frameScope?: string | null;
   profileId?: string | null;
@@ -231,23 +233,21 @@ function frameScopeLabel(frameScope: string | null): string {
 }
 
 function buildRuleList(state: ActiveSiteState): void {
-  const cards = Array.from(
-    state.rules.reduce((map, rule) => {
-      const current = map.get(rule.cardId) ?? {
-        cardId: rule.cardId,
-        cardName: rule.cardName,
-        rules: [] as typeof state.rules
-      };
-      current.rules.push(rule);
-      map.set(rule.cardId, current);
-      return map;
-    }, new Map<string, { cardId: string; cardName: string; rules: typeof state.rules }>())
-      .values()
-  );
+  const buildSectionTitle = (text: string): HTMLDivElement => {
+    const title = document.createElement("div");
+    title.className = "popup__meta";
+    title.style.marginBottom = "6px";
+    title.style.fontWeight = "700";
+    title.textContent = text;
+    return title;
+  };
 
-  const createCardItem = (card: { cardId: string; cardName: string; rules: typeof state.rules }): HTMLLIElement => {
+  const createCardItem = (card: ActiveSiteState["cards"][number]): HTMLLIElement => {
     const item = document.createElement("li");
     item.className = "popup__rule-item";
+    if (!card.enabled) {
+      item.style.opacity = "0.7";
+    }
 
     const cardTitle = document.createElement("div");
     cardTitle.className = "popup__meta";
@@ -256,7 +256,7 @@ function buildRuleList(state: ActiveSiteState): void {
 
     const summary = document.createElement("div");
     summary.className = "popup__meta";
-    summary.textContent = `규칙 ${card.rules.length}개`;
+    summary.textContent = `규칙 ${card.ruleCount}개 · 카드 ID ${card.cardId} · ${card.enabled ? "활성" : "비활성"}`;
 
     const list = document.createElement("div");
     list.style.display = "grid";
@@ -282,6 +282,8 @@ function buildRuleList(state: ActiveSiteState): void {
       removeButton.addEventListener("click", () => {
         void (async () => {
           const nextState = await mutateContentScript<ActiveSiteState>(messageTypes.removeSiteRule, {
+            cardId: rule.cardId,
+            createdAt: rule.createdAt,
             frameScope: rule.frameScope,
             profileId: state.activeProfileId,
             selector: rule.selector
@@ -301,9 +303,22 @@ function buildRuleList(state: ActiveSiteState): void {
     return item;
   };
 
+  const enabledCards = state.cards.filter((card) => card.enabled);
+  const disabledCards = state.cards.filter((card) => !card.enabled);
   const items: HTMLElement[] = [];
-  for (const card of cards) {
-    items.push(createCardItem(card));
+
+  if (enabledCards.length > 0) {
+    items.push(buildSectionTitle(`활성 카드 ${enabledCards.length}개`));
+    for (const card of enabledCards) {
+      items.push(createCardItem(card));
+    }
+  }
+
+  if (disabledCards.length > 0) {
+    items.push(buildSectionTitle(`비활성 카드 ${disabledCards.length}개`));
+    for (const card of disabledCards) {
+      items.push(createCardItem(card));
+    }
   }
 
   ruleListElement.replaceChildren(...items);
@@ -311,10 +326,11 @@ function buildRuleList(state: ActiveSiteState): void {
 }
 
 function renderState(state: ActiveSiteState): void {
+  const enabledCardCount = state.cards.filter((card) => card.enabled).length;
   siteLabelElement.textContent = state.activeProfileName
     ? `${state.hostname} · ${state.activeProfileName}`
     : `${state.hostname} · 기본 프로필`;
-  ruleCountElement.textContent = `저장된 선택자 ${state.selectorCount}개`;
+  ruleCountElement.textContent = `저장된 카드 ${state.cardCount}개 · 활성 카드 ${enabledCardCount}개 · 활성 선택자 ${state.enabledSelectorCount}개 / 전체 선택자 ${state.selectorCount}개`;
   profileNameElement.textContent = state.activeProfileName
     ? `현재 프로필: ${state.activeProfileName}`
     : "현재 프로필: 아직 매칭된 프로필이 없습니다";

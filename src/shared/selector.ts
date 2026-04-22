@@ -107,6 +107,63 @@ function simpleCandidates(element: Element, options?: { allowNth?: boolean }): s
   return Array.from(new Set(selectors));
 }
 
+function isUniqueAmongSiblings(element: Element, segment: string): boolean {
+  const parent = element.parentElement;
+  if (!parent) {
+    return true;
+  }
+
+  try {
+    return parent.querySelectorAll(`:scope > ${segment}`).length === 1;
+  } catch {
+    return false;
+  }
+}
+
+function preferredExactSegmentSelector(element: Element): string {
+  const candidates = simpleCandidates(element, { allowNth: false })
+    .filter((candidate) => !isBareTagSelector(candidate))
+    .sort((left, right) => selectorSpecificityScore(right) - selectorSpecificityScore(left));
+
+  for (const candidate of candidates) {
+    if (isUniqueAmongSiblings(element, candidate)) {
+      return candidate;
+    }
+  }
+
+  return nthOfTypeSelector(element);
+}
+
+function buildForcedUniqueSelector(element: Element, root: Document = document): string {
+  const segments: string[] = [];
+  let current: Element | null = element;
+
+  while (current && current !== document.documentElement) {
+    segments.unshift(preferredExactSegmentSelector(current));
+    const selector = segments.join(" > ");
+    if (isUniqueSelector(selector, root)) {
+      return selector;
+    }
+    current = current.parentElement;
+  }
+
+  return segments.join(" > ");
+}
+
+function buildGroupSelectorCandidates(element: Element, root: Document = document): string[] {
+  return simpleCandidates(element, { allowNth: false })
+    .filter((candidate) => !isBareTagSelector(candidate))
+    .sort((left, right) => selectorSpecificityScore(right) - selectorSpecificityScore(left))
+    .filter((candidate) => {
+      try {
+        const matches = root.querySelectorAll(candidate).length;
+        return matches > 1 && matches <= 12;
+      } catch {
+        return false;
+      }
+    });
+}
+
 function uniqueDirectCandidates(element: Element, root: Document = document): string[] {
   return simpleCandidates(element, { allowNth: true }).filter((selector) => isUniqueSelector(selector, root));
 }
@@ -140,6 +197,8 @@ export function buildSelectorCandidates(element: Element, root: Document = docum
     results.push(selector);
   };
 
+  pushIfUseful(buildForcedUniqueSelector(element, root));
+
   const directCandidates = uniqueDirectCandidates(element, root).sort(
     (left, right) => selectorSpecificityScore(right) - selectorSpecificityScore(left)
   );
@@ -160,6 +219,10 @@ export function buildSelectorCandidates(element: Element, root: Document = docum
 
     ancestor = ancestor.parentElement;
     depth += 1;
+  }
+
+  for (const groupSelector of buildGroupSelectorCandidates(element, root)) {
+    pushIfUseful(groupSelector);
   }
 
   if (results.length === 0) {
