@@ -44,6 +44,11 @@ type MessagePayload = {
   enabled?: boolean;
   selector?: string;
 };
+type ScriptingApi = {
+  executeScript: (
+    injection: chrome.scripting.ScriptInjection<() => void> | chrome.scripting.ScriptInjection<unknown[], unknown>
+  ) => Promise<unknown>;
+};
 
 function isSupportedUrl(url?: string): boolean {
   return typeof url === "string" && /^https?:\/\//.test(url);
@@ -106,7 +111,7 @@ async function sendMessageToTab(
   });
 }
 
-function getScriptingApi(): chrome.scripting.Static | null {
+function getScriptingApi(): ScriptingApi | null {
   const scriptingApi = Reflect.get(chrome, "scripting");
   if (!scriptingApi || typeof scriptingApi !== "object") {
     return null;
@@ -116,7 +121,7 @@ function getScriptingApi(): chrome.scripting.Static | null {
     return null;
   }
 
-  return scriptingApi as chrome.scripting.Static;
+  return scriptingApi as ScriptingApi;
 }
 
 async function ensureContentScript(tabId: number): Promise<void> {
