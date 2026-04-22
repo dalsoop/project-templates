@@ -1,6 +1,12 @@
+export type StoredRule = {
+  createdAt: string;
+  frameScope: string | null;
+  selector: string;
+};
+
 export type SiteRuleSet = {
   enabled: boolean;
-  selectors: string[];
+  rules: StoredRule[];
   updatedAt: string;
 };
 
@@ -15,7 +21,7 @@ export type RuleStore = {
 export type ActiveSiteState = {
   globalEnabled: boolean;
   hostname: string;
-  selectors: string[];
+  rules: StoredRule[];
   selectorCount: number;
   siteEnabled: boolean;
   updatedAt: string;

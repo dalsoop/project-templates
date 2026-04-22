@@ -18,7 +18,13 @@ void test("normalizeStore migrates version 1 shape to the current version", () =
     version: 1,
     sites: {
       "example.com": {
-        selectors: [".banner"],
+        rules: [
+          {
+            createdAt: "1970-01-01T00:00:00.000Z",
+            frameScope: null,
+            selector: ".banner"
+          }
+        ],
         updatedAt: "2026-01-01T00:00:00.000Z"
       }
     }
@@ -32,7 +38,13 @@ void test("normalizeStore migrates version 1 shape to the current version", () =
     sites: {
       "example.com": {
         enabled: true,
-        selectors: [".banner"],
+        rules: [
+          {
+            createdAt: "1970-01-01T00:00:00.000Z",
+            frameScope: null,
+            selector: ".banner"
+          }
+        ],
         updatedAt: "2026-01-01T00:00:00.000Z"
       }
     }

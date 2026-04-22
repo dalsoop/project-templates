@@ -25,7 +25,11 @@ infocutterGlobal.__INFOCUTTER_CONTENT_LOADED__ = true;
 
 type SiteRuleSet = {
   enabled: boolean;
-  selectors: string[];
+  rules: {
+    createdAt: string;
+    frameScope: string | null;
+    selector: string;
+  }[];
   updatedAt: string;
 };
 
@@ -40,7 +44,11 @@ type RuleStore = {
 type ActiveSiteState = {
   globalEnabled: boolean;
   hostname: string;
-  selectors: string[];
+  rules: {
+    createdAt: string;
+    frameScope: string | null;
+    selector: string;
+  }[];
   selectorCount: number;
   siteEnabled: boolean;
   updatedAt: string;
@@ -52,7 +60,7 @@ let lastContextTarget: Element | null = null;
 function emptySiteRuleSet(): SiteRuleSet {
   return {
     enabled: true,
-    selectors: [],
+    rules: [],
     updatedAt: new Date(0).toISOString()
   };
 }
@@ -71,22 +79,79 @@ function hostnameFromUrl(url: string): string {
   return new URL(url).hostname.toLowerCase();
 }
 
+function ownerPageUrl(): string {
+  if (window.top === window) {
+    return window.location.href;
+  }
+
+  return document.referrer || window.location.href;
+}
+
+function currentFrameScope(): string | null {
+  if (window.top === window) {
+    return null;
+  }
+
+  return `${window.location.origin}${window.location.pathname}`;
+}
+
 function normalizeSiteRuleSet(rawSiteRules: unknown): SiteRuleSet {
   const partialSiteRules =
     rawSiteRules && typeof rawSiteRules === "object"
-      ? (rawSiteRules as {
-          enabled?: boolean;
-          selectors?: unknown;
-          updatedAt?: unknown;
-        })
+      ? rawSiteRules
       : {};
 
+  const enabledValue: unknown = Reflect.get(partialSiteRules, "enabled");
+  const rulesValue: unknown = Reflect.get(partialSiteRules, "rules");
+  const selectorsValue: unknown = Reflect.get(partialSiteRules, "selectors");
+  const updatedAtValue: unknown = Reflect.get(partialSiteRules, "updatedAt");
+
+  const rawRules: unknown[] = Array.isArray(rulesValue)
+    ? rulesValue
+    : Array.isArray(selectorsValue)
+      ? selectorsValue.map((selector: unknown) => ({
+        createdAt: new Date(0).toISOString(),
+        frameScope: null,
+        selector
+      }))
+      : [];
+
+  const rules = rawRules
+    .map((rule) => {
+      if (typeof rule === "string") {
+        return {
+          createdAt: new Date(0).toISOString(),
+          frameScope: null,
+          selector: rule
+        };
+      }
+
+      if (!rule || typeof rule !== "object") {
+        return null;
+      }
+
+      const candidate = rule as {
+        createdAt?: unknown;
+        frameScope?: unknown;
+        selector?: unknown;
+      };
+
+      if (typeof candidate.selector !== "string") {
+        return null;
+      }
+
+      return {
+        createdAt: typeof candidate.createdAt === "string" ? candidate.createdAt : new Date(0).toISOString(),
+        frameScope: typeof candidate.frameScope === "string" ? candidate.frameScope : null,
+        selector: candidate.selector
+      };
+    })
+    .filter((rule): rule is SiteRuleSet["rules"][number] => rule !== null);
+
   return {
-    enabled: partialSiteRules.enabled ?? true,
-    selectors: Array.isArray(partialSiteRules.selectors)
-      ? partialSiteRules.selectors.filter((selector): selector is string => typeof selector === "string")
-      : [],
-    updatedAt: typeof partialSiteRules.updatedAt === "string" ? partialSiteRules.updatedAt : new Date(0).toISOString()
+    enabled: typeof enabledValue === "boolean" ? enabledValue : true,
+    rules,
+    updatedAt: typeof updatedAtValue === "string" ? updatedAtValue : new Date(0).toISOString()
   };
 }
 
@@ -152,12 +217,19 @@ async function writeStore(store: RuleStore): Promise<void> {
   });
 }
 
-async function addSiteRule(hostname: string, selector: string): Promise<SiteRuleSet> {
+async function addSiteRule(hostname: string, selector: string, frameScope: string | null): Promise<SiteRuleSet> {
   const store = await readStore();
   const current = store.sites[hostname] ?? emptySiteRuleSet();
+  const nextRule = {
+    createdAt: new Date().toISOString(),
+    frameScope,
+    selector
+  };
   const next: SiteRuleSet = {
     enabled: true,
-    selectors: current.selectors.includes(selector) ? current.selectors : [...current.selectors, selector],
+    rules: current.rules.some((rule) => rule.selector === selector && rule.frameScope === frameScope)
+      ? current.rules
+      : [...current.rules, nextRule],
     updatedAt: new Date().toISOString()
   };
 
@@ -166,12 +238,12 @@ async function addSiteRule(hostname: string, selector: string): Promise<SiteRule
   return next;
 }
 
-async function removeSiteRule(hostname: string, selector: string): Promise<SiteRuleSet> {
+async function removeSiteRule(hostname: string, selector: string, frameScope: string | null): Promise<SiteRuleSet> {
   const store = await readStore();
   const current = store.sites[hostname] ?? emptySiteRuleSet();
   const next: SiteRuleSet = {
     ...current,
-    selectors: current.selectors.filter((existingSelector) => existingSelector !== selector),
+    rules: current.rules.filter((rule) => !(rule.selector === selector && rule.frameScope === frameScope)),
     updatedAt: new Date().toISOString()
   };
 
@@ -185,7 +257,7 @@ async function clearSiteRules(hostname: string): Promise<SiteRuleSet> {
   const current = store.sites[hostname] ?? emptySiteRuleSet();
   const next: SiteRuleSet = {
     ...current,
-    selectors: [],
+    rules: [],
     updatedAt: new Date().toISOString()
   };
 
@@ -229,8 +301,8 @@ async function readActiveSiteState(url: string): Promise<ActiveSiteState> {
   return {
     globalEnabled: store.settings.globalEnabled,
     hostname,
-    selectors: [...siteRules.selectors],
-    selectorCount: siteRules.selectors.length,
+    rules: [...siteRules.rules],
+    selectorCount: siteRules.rules.length,
     siteEnabled: siteRules.enabled,
     updatedAt: siteRules.updatedAt
   };
@@ -393,15 +465,20 @@ function ensureStyleElement(): HTMLStyleElement {
 }
 
 async function renderRules(): Promise<void> {
-  const activeSiteState = await readActiveSiteState(window.location.href);
+  const activeSiteState = await readActiveSiteState(ownerPageUrl());
   const style = ensureStyleElement();
+  const frameScope = currentFrameScope();
 
   if (!activeSiteState.globalEnabled || !activeSiteState.siteEnabled) {
     style.textContent = "";
     return;
   }
 
-  style.textContent = selectorCss(activeSiteState.selectors);
+  style.textContent = selectorCss(
+    activeSiteState.rules
+      .filter((rule) => rule.frameScope === frameScope)
+      .map((rule) => rule.selector)
+  );
 }
 
 function removePickerArtifacts(): void {
@@ -605,7 +682,7 @@ function startPicker(): void {
         document.querySelectorAll(selector).length,
         () => {
           void (async () => {
-            await addSiteRule(hostnameFromUrl(window.location.href), selector);
+            await addSiteRule(hostnameFromUrl(ownerPageUrl()), selector, currentFrameScope());
             await renderRules();
             stopPicker();
           })();
@@ -630,7 +707,7 @@ function startPicker(): void {
 
 async function hideTargetElement(target: Element): Promise<string> {
   const selector = buildSelector(target);
-  await addSiteRule(hostnameFromUrl(window.location.href), selector);
+  await addSiteRule(hostnameFromUrl(ownerPageUrl()), selector, currentFrameScope());
   await renderRules();
   return selector;
 }
@@ -667,7 +744,7 @@ chrome.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) =
     if (type === messageTypes.getPageState) {
       sendResponse({
         ok: true,
-        data: await readActiveSiteState(window.location.href)
+        data: await readActiveSiteState(ownerPageUrl())
       });
       return;
     }
@@ -696,27 +773,31 @@ chrome.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) =
     }
 
     if (type === messageTypes.clearSiteRules) {
-      await clearSiteRules(hostnameFromUrl(window.location.href));
+      await clearSiteRules(hostnameFromUrl(ownerPageUrl()));
       await renderRules();
       sendResponse({
         ok: true,
-        data: await readActiveSiteState(window.location.href)
+        data: await readActiveSiteState(ownerPageUrl())
       });
       return;
     }
 
     if (type === messageTypes.removeSiteRule) {
       const selector = "selector" in message && typeof message.selector === "string" ? message.selector : null;
+      const frameScope =
+        "frameScope" in message && typeof message.frameScope === "string"
+          ? message.frameScope
+          : null;
       if (!selector) {
         sendResponse({ ok: false });
         return;
       }
 
-      await removeSiteRule(hostnameFromUrl(window.location.href), selector);
+      await removeSiteRule(hostnameFromUrl(ownerPageUrl()), selector, frameScope);
       await renderRules();
       sendResponse({
         ok: true,
-        data: await readActiveSiteState(window.location.href)
+        data: await readActiveSiteState(ownerPageUrl())
       });
       return;
     }
@@ -728,11 +809,11 @@ chrome.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) =
         return;
       }
 
-      await setSiteEnabled(hostnameFromUrl(window.location.href), enabled);
+      await setSiteEnabled(hostnameFromUrl(ownerPageUrl()), enabled);
       await renderRules();
       sendResponse({
         ok: true,
-        data: await readActiveSiteState(window.location.href)
+        data: await readActiveSiteState(ownerPageUrl())
       });
       return;
     }
@@ -748,7 +829,7 @@ chrome.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) =
       await renderRules();
       sendResponse({
         ok: true,
-        data: await readActiveSiteState(window.location.href)
+        data: await readActiveSiteState(ownerPageUrl())
       });
       return;
     }

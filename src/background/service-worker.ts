@@ -21,7 +21,7 @@ async function updateBadgeForTab(tabId: number, url?: string): Promise<void> {
   const hostname = hostnameFromUrl(url);
   const siteRules = await readSiteRules(hostname);
 
-  if (!store.settings.globalEnabled || !siteRules.enabled || siteRules.selectors.length === 0) {
+  if (!store.settings.globalEnabled || !siteRules.enabled || siteRules.rules.length === 0) {
     await chrome.action.setBadgeText({ tabId, text: "" });
     return;
   }
@@ -32,7 +32,7 @@ async function updateBadgeForTab(tabId: number, url?: string): Promise<void> {
   });
   await chrome.action.setBadgeText({
     tabId,
-    text: String(Math.min(siteRules.selectors.length, 99))
+    text: String(Math.min(siteRules.rules.length, 99))
   });
 }
 

@@ -42,6 +42,7 @@ const debugButtonElement = assertElement(debugButton, "debug-button") as HTMLBut
 type ActiveTab = chrome.tabs.Tab & { id: number };
 type MessagePayload = {
   enabled?: boolean;
+  frameScope?: string | null;
   selector?: string;
 };
 
@@ -179,13 +180,20 @@ async function mutateContentScript<T>(type: string, payload?: MessagePayload): P
 }
 
 function buildRuleList(state: ActiveSiteState): void {
-  const items = state.selectors.map((selector) => {
+  const items = state.rules.map((rule) => {
     const item = document.createElement("li");
     item.className = "popup__rule-item";
 
     const selectorText = document.createElement("code");
     selectorText.className = "popup__rule-selector";
-    selectorText.textContent = selector;
+    selectorText.textContent = rule.selector;
+
+    if (rule.frameScope) {
+      const scopeText = document.createElement("div");
+      scopeText.className = "popup__meta";
+      scopeText.textContent = `iframe 범위: ${rule.frameScope}`;
+      item.append(scopeText);
+    }
 
     const removeButton = document.createElement("button");
     removeButton.type = "button";
@@ -193,7 +201,10 @@ function buildRuleList(state: ActiveSiteState): void {
     removeButton.textContent = "삭제";
     removeButton.addEventListener("click", () => {
       void (async () => {
-        const nextState = await mutateContentScript<ActiveSiteState>(messageTypes.removeSiteRule, { selector });
+        const nextState = await mutateContentScript<ActiveSiteState>(messageTypes.removeSiteRule, {
+          frameScope: rule.frameScope,
+          selector: rule.selector
+        });
         renderState(nextState);
         statusElement.textContent = "선택자를 삭제했습니다.";
       })().catch((error: unknown) => {
