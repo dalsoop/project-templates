@@ -1,9 +1,12 @@
+(() => {
 const STORAGE_KEY = "infocutter.ruleStore";
 const STORAGE_VERSION = 2;
 const STYLE_ELEMENT_ID = "infocutter-style-rules";
 const PICKER_OVERLAY_ID = "infocutter-picker-overlay";
 const PICKER_PREVIEW_STYLE_ID = "infocutter-preview-style";
 const PICKER_PREVIEW_PANEL_ID = "infocutter-preview-panel";
+const PICKER_FRAME_MESSAGE_TYPE = "infocutter/start-picker-in-frame";
+const PICKER_FRAME_ACK_TYPE = "infocutter/start-picker-in-frame-ack";
 
 const messageTypes = {
   ping: "infocutter/ping",
@@ -93,6 +96,20 @@ function currentFrameScope(): string | null {
   }
 
   return `${window.location.origin}${window.location.pathname}`;
+}
+
+function currentFrameLabel(): string {
+  const frameScope = currentFrameScope();
+  return frameScope ? `iframe 안 선택 중: ${frameScope}` : "메인 문서에서 선택 중";
+}
+
+function iframeAccessMode(iframeElement: HTMLIFrameElement): "same-origin" | "cross-origin" | "unknown" {
+  try {
+    void iframeElement.contentDocument?.body;
+    return iframeElement.contentWindow ? "same-origin" : "unknown";
+  } catch {
+    return "cross-origin";
+  }
 }
 
 function normalizeSiteRuleSet(rawSiteRules: unknown): SiteRuleSet {
@@ -515,7 +532,7 @@ function buildPickerLabel(): HTMLDivElement {
   label.style.font = '12px "SF Mono", "IBM Plex Mono", ui-monospace, monospace';
   label.style.zIndex = "2147483647";
   label.style.pointerEvents = "none";
-  label.textContent = "인포커터 선택 모드: 숨길 요소를 클릭하거나 Escape로 취소하세요.";
+  label.textContent = `인포커터 선택 모드: ${currentFrameLabel()} / 숨길 요소를 클릭하거나 Escape로 취소하세요.`;
   document.documentElement.append(label);
   return label;
 }
@@ -612,6 +629,133 @@ function buildPreviewPanel(
   return panel;
 }
 
+function buildIframePanel(
+  iframeElement: HTMLIFrameElement,
+  onHideFrame: () => void,
+  onEnterFrame: () => void,
+  onCancel: () => void
+): HTMLDivElement {
+  document.getElementById(PICKER_PREVIEW_PANEL_ID)?.remove();
+
+  const panel = document.createElement("div");
+  panel.id = PICKER_PREVIEW_PANEL_ID;
+  panel.style.position = "fixed";
+  panel.style.right = "16px";
+  panel.style.bottom = "64px";
+  panel.style.width = "320px";
+  panel.style.padding = "12px";
+  panel.style.background = "#231f17";
+  panel.style.color = "#f7f4eb";
+  panel.style.zIndex = "2147483647";
+  panel.style.boxShadow = "0 12px 30px rgba(0,0,0,0.24)";
+  panel.style.font = '12px "SF Mono", "IBM Plex Mono", ui-monospace, monospace';
+
+  const title = document.createElement("div");
+  title.textContent = "iframe 감지됨";
+  title.style.fontWeight = "700";
+  title.style.marginBottom = "8px";
+
+  const meta = document.createElement("div");
+  const frameHint = iframeElement.getAttribute("src") ?? iframeElement.getAttribute("title") ?? "내부 프레임";
+  meta.textContent = `이 요소는 iframe 입니다: ${frameHint}`;
+  meta.style.marginBottom = "8px";
+  meta.style.color = "#f5d6b0";
+  meta.style.whiteSpace = "pre-wrap";
+  meta.style.wordBreak = "break-word";
+
+  const guide = document.createElement("div");
+  const accessMode = iframeAccessMode(iframeElement);
+  if (accessMode === "cross-origin") {
+    guide.textContent = "이 iframe은 다른 출처일 가능성이 있어 내부 선택이 제한될 수 있습니다. 안으로 들어가지 못하면 프레임 자체 숨기기를 사용하세요.";
+  } else {
+    guide.textContent = "프레임 자체를 숨기거나, 프레임 안으로 들어가서 내부 요소를 다시 선택할 수 있습니다.";
+  }
+  guide.style.marginBottom = "10px";
+  guide.style.lineHeight = "1.45";
+
+  const actions = document.createElement("div");
+  actions.style.display = "flex";
+  actions.style.gap = "8px";
+
+  const hideButton = document.createElement("button");
+  hideButton.type = "button";
+  hideButton.textContent = "프레임 숨기기";
+  hideButton.style.flex = "1";
+
+  const enterButton = document.createElement("button");
+  enterButton.type = "button";
+  enterButton.textContent = "프레임 안 선택";
+  enterButton.style.flex = "1";
+  if (accessMode === "cross-origin") {
+    enterButton.textContent = "프레임 안 선택 시도";
+  }
+
+  const cancelButton = document.createElement("button");
+  cancelButton.type = "button";
+  cancelButton.textContent = "취소";
+  cancelButton.style.flex = "1";
+
+  for (const button of [hideButton, enterButton, cancelButton]) {
+    button.style.border = "1px solid #f7f4eb";
+    button.style.background = "transparent";
+    button.style.color = "#f7f4eb";
+    button.style.padding = "8px 10px";
+    button.style.cursor = "pointer";
+  }
+
+  hideButton.addEventListener("click", onHideFrame);
+  enterButton.addEventListener("click", onEnterFrame);
+  cancelButton.addEventListener("click", onCancel);
+
+  actions.append(hideButton, enterButton, cancelButton);
+  panel.append(title, meta, guide, actions);
+  document.documentElement.append(panel);
+  return panel;
+}
+
+async function startPickerInIframe(iframeElement: HTMLIFrameElement): Promise<boolean> {
+  if (!iframeElement.contentWindow) {
+    return false;
+  }
+
+  const requestId = crypto.randomUUID();
+
+  return new Promise((resolve) => {
+    const timeoutId = window.setTimeout(() => {
+      window.removeEventListener("message", handleAck);
+      resolve(false);
+    }, 1200);
+
+    const handleAck = (event: MessageEvent): void => {
+      const payload: unknown = event.data;
+      if (!payload || typeof payload !== "object") {
+        return;
+      }
+
+      const source = "source" in payload ? Reflect.get(payload, "source") : null;
+      const type = "type" in payload ? Reflect.get(payload, "type") : null;
+      const ackRequestId = "requestId" in payload ? Reflect.get(payload, "requestId") : null;
+
+      if (source === "infocutter" && type === PICKER_FRAME_ACK_TYPE && ackRequestId === requestId) {
+        window.clearTimeout(timeoutId);
+        window.removeEventListener("message", handleAck);
+        resolve(true);
+      }
+    };
+
+    window.addEventListener("message", handleAck);
+
+    iframeElement.contentWindow?.postMessage(
+      {
+        requestId,
+        source: "infocutter",
+        type: PICKER_FRAME_MESSAGE_TYPE
+      },
+      "*"
+    );
+  });
+}
+
 function startPicker(): void {
   pickerStop?.();
 
@@ -669,6 +813,43 @@ function startPicker(): void {
     document.removeEventListener("mousemove", updateOverlay, true);
     document.removeEventListener("click", handleClick, true);
 
+    if (target instanceof HTMLIFrameElement) {
+      buildIframePanel(
+        target,
+        () => {
+          void (async () => {
+            await hideTargetElement(target);
+            stopPicker();
+          })();
+        },
+        () => {
+          void (async () => {
+            const accessMode = iframeAccessMode(target);
+            const started = await startPickerInIframe(target);
+            if (!started) {
+              const label = buildPickerLabel();
+              label.textContent = accessMode === "cross-origin"
+                ? "cross-origin iframe이라 내부 선택을 시작하지 못했습니다. 프레임 자체 숨기기를 사용해보세요."
+                : "iframe 내부 선택을 시작하지 못했습니다. 프레임 자체 숨기기를 사용해보세요.";
+              return;
+            }
+
+            document.getElementById(PICKER_PREVIEW_PANEL_ID)?.remove();
+            document.getElementById(PICKER_PREVIEW_STYLE_ID)?.remove();
+            document.getElementById(`${PICKER_OVERLAY_ID}-label`)?.remove();
+            buildPickerLabel().textContent = "iframe 안으로 들어갔습니다. 프레임 내부에서 다시 요소를 선택하세요.";
+            overlay.remove();
+            document.documentElement.style.cursor = "";
+            pickerStop = null;
+          })();
+        },
+        () => {
+          stopPicker();
+        }
+      );
+      return;
+    }
+
     const candidates = buildSelectorCandidates(target);
     let candidateIndex = 0;
 
@@ -720,6 +901,33 @@ document.addEventListener(
   },
   true
 );
+
+window.addEventListener("message", (event: MessageEvent) => {
+  const payload: unknown = event.data;
+  if (!payload || typeof payload !== "object") {
+    return;
+  }
+
+  const source = "source" in payload ? Reflect.get(payload, "source") : null;
+  const type = "type" in payload ? Reflect.get(payload, "type") : null;
+
+  if (source === "infocutter" && type === PICKER_FRAME_MESSAGE_TYPE) {
+    const requestId = "requestId" in payload ? Reflect.get(payload, "requestId") : null;
+    if (requestId && event.source && "postMessage" in event.source && typeof event.source.postMessage === "function") {
+      event.source.postMessage(
+        {
+          requestId,
+          source: "infocutter",
+          type: PICKER_FRAME_ACK_TYPE
+        },
+        {
+          targetOrigin: "*"
+        }
+      );
+    }
+    startPicker();
+  }
+});
 
 chrome.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) => {
   void (async () => {
@@ -853,3 +1061,4 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
 
 void renderRules();
 }
+})();
