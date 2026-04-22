@@ -2,6 +2,8 @@ const STORAGE_KEY = "infocutter.ruleStore";
 const STORAGE_VERSION = 2;
 const STYLE_ELEMENT_ID = "infocutter-style-rules";
 const PICKER_OVERLAY_ID = "infocutter-picker-overlay";
+const PICKER_PREVIEW_STYLE_ID = "infocutter-preview-style";
+const PICKER_PREVIEW_PANEL_ID = "infocutter-preview-panel";
 
 const messageTypes = {
   ping: "infocutter/ping",
@@ -242,23 +244,32 @@ function isUniqueSelector(selector: string, root: Document = document): boolean 
   return root.querySelectorAll(selector).length === 1;
 }
 
-function stableClasses(element: Element): string[] {
-  return Array.from(element.classList)
-    .filter((className) => /^[a-z][a-z0-9_-]{1,30}$/i.test(className))
-    .slice(0, 3);
+function maybeStableClassName(className: string): boolean {
+  if (!/^[a-z][a-z0-9_-]{1,40}$/i.test(className)) {
+    return false;
+  }
+
+  const digitCount = className.replace(/\D/g, "").length;
+  return digitCount <= 3;
 }
 
-function attributeSelector(element: Element): string | null {
-  const stableAttributes = ["data-testid", "data-test", "data-qa", "name", "role", "aria-label"];
+function stableClasses(element: Element): string[] {
+  return Array.from(element.classList).filter(maybeStableClassName).slice(0, 3);
+}
+
+function attributeSelectors(element: Element): string[] {
+  const stableAttributes = ["data-testid", "data-test", "data-qa", "aria-label", "title", "alt"];
+  const selectors: string[] = [];
 
   for (const attribute of stableAttributes) {
     const value = element.getAttribute(attribute);
     if (value && value.length <= 80) {
-      return `[${attribute}="${escapeSelector(value)}"]`;
+      selectors.push(`${element.localName}[${attribute}="${escapeSelector(value)}"]`);
+      selectors.push(`[${attribute}="${escapeSelector(value)}"]`);
     }
   }
 
-  return null;
+  return selectors;
 }
 
 function nthOfTypeSelector(element: Element): string {
@@ -272,50 +283,97 @@ function nthOfTypeSelector(element: Element): string {
   return `${element.localName}:nth-of-type(${index})`;
 }
 
-function simpleSelector(element: Element): string {
-  const id = element.getAttribute("id");
-  if (id) {
-    const byId = `#${escapeSelector(id)}`;
-    if (isUniqueSelector(byId)) {
-      return byId;
-    }
-  }
-
-  const attr = attributeSelector(element);
-  if (attr) {
-    const byAttr = `${element.localName}${attr}`;
-    if (isUniqueSelector(byAttr)) {
-      return byAttr;
-    }
-  }
-
+function classSelectors(element: Element): string[] {
   const classes = stableClasses(element);
-  if (classes.length > 0) {
-    const classSelector = `${element.localName}${classes.map((className) => `.${escapeSelector(className)}`).join("")}`;
-    if (isUniqueSelector(classSelector)) {
-      return classSelector;
-    }
+  const selectors: string[] = [];
+
+  for (let size = 1; size <= classes.length; size += 1) {
+    const joined = classes.slice(0, size).map((className) => `.${escapeSelector(className)}`).join("");
+    selectors.push(`${element.localName}${joined}`);
+    selectors.push(joined);
   }
 
-  return nthOfTypeSelector(element);
+  return selectors;
 }
 
-function buildSelector(element: Element): string {
+function simpleCandidates(element: Element, options?: { allowNth?: boolean }): string[] {
+  const selectors: string[] = [];
+  const id = element.getAttribute("id");
+
+  if (id) {
+    selectors.push(`#${escapeSelector(id)}`);
+    selectors.push(`${element.localName}#${escapeSelector(id)}`);
+  }
+
+  selectors.push(...attributeSelectors(element));
+  selectors.push(...classSelectors(element));
+  selectors.push(element.localName);
+
+  if (options?.allowNth) {
+    selectors.push(nthOfTypeSelector(element));
+  }
+
+  return Array.from(new Set(selectors));
+}
+
+function pathSelector(ancestor: Element, target: Element): string {
   const segments: string[] = [];
-  let current: Element | null = element;
+  let current: Element | null = target;
 
-  while (current && current !== document.documentElement) {
-    segments.unshift(simpleSelector(current));
-    const selector = segments.join(" > ");
-
-    if (isUniqueSelector(selector)) {
-      return selector;
-    }
-
+  while (current && current !== ancestor) {
+    const candidates = simpleCandidates(current, { allowNth: true });
+    segments.unshift(candidates[0] ?? current.localName);
     current = current.parentElement;
   }
 
-  return segments.join(" > ");
+  const anchor = simpleCandidates(ancestor, { allowNth: false }).find((selector) => isUniqueSelector(selector))
+    ?? ancestor.localName;
+
+  return [anchor, ...segments].join(" > ");
+}
+
+function buildSelectorCandidates(element: Element): string[] {
+  const seen = new Set<string>();
+  const selectors: string[] = [];
+
+  const pushIfUseful = (selector: string): void => {
+    if (!selector || seen.has(selector)) {
+      return;
+    }
+
+    seen.add(selector);
+    selectors.push(selector);
+  };
+
+  for (const selector of simpleCandidates(element, { allowNth: true })) {
+    if (isUniqueSelector(selector)) {
+      pushIfUseful(selector);
+    }
+  }
+
+  let ancestor = element.parentElement;
+  let depth = 0;
+
+  while (ancestor && depth < 4) {
+    const selector = pathSelector(ancestor, element);
+    pushIfUseful(selector);
+    if (isUniqueSelector(selector)) {
+      break;
+    }
+
+    ancestor = ancestor.parentElement;
+    depth += 1;
+  }
+
+  if (selectors.length === 0) {
+    pushIfUseful(nthOfTypeSelector(element));
+  }
+
+  return selectors;
+}
+
+function buildSelector(element: Element): string {
+  return buildSelectorCandidates(element)[0] ?? element.localName;
 }
 
 function selectorCss(selectors: string[]): string {
@@ -349,6 +407,9 @@ async function renderRules(): Promise<void> {
 function removePickerArtifacts(): void {
   document.getElementById(PICKER_OVERLAY_ID)?.remove();
   document.getElementById(`${PICKER_OVERLAY_ID}-label`)?.remove();
+  document.getElementById(PICKER_PREVIEW_PANEL_ID)?.remove();
+  document.getElementById(PICKER_PREVIEW_STYLE_ID)?.remove();
+  document.documentElement.style.cursor = "";
 }
 
 function buildOverlay(): HTMLDivElement {
@@ -382,12 +443,105 @@ function buildPickerLabel(): HTMLDivElement {
   return label;
 }
 
+function applyPreviewSelector(selector: string): void {
+  let style = document.getElementById(PICKER_PREVIEW_STYLE_ID);
+  if (!(style instanceof HTMLStyleElement)) {
+    style = document.createElement("style");
+    style.id = PICKER_PREVIEW_STYLE_ID;
+    document.documentElement.append(style);
+  }
+
+  style.textContent = `${selector} { display: none !important; }`;
+}
+
+function buildPreviewPanel(
+  selector: string,
+  index: number,
+  total: number,
+  matches: number,
+  onApply: () => void,
+  onNext: () => void,
+  onCancel: () => void
+): HTMLDivElement {
+  document.getElementById(PICKER_PREVIEW_PANEL_ID)?.remove();
+
+  const panel = document.createElement("div");
+  panel.id = PICKER_PREVIEW_PANEL_ID;
+  panel.style.position = "fixed";
+  panel.style.right = "16px";
+  panel.style.bottom = "64px";
+  panel.style.width = "320px";
+  panel.style.padding = "12px";
+  panel.style.background = "#231f17";
+  panel.style.color = "#f7f4eb";
+  panel.style.zIndex = "2147483647";
+  panel.style.boxShadow = "0 12px 30px rgba(0,0,0,0.24)";
+  panel.style.font = '12px "SF Mono", "IBM Plex Mono", ui-monospace, monospace';
+
+  const title = document.createElement("div");
+  title.textContent = `미리보기 ${index + 1}/${total}`;
+  title.style.fontWeight = "700";
+  title.style.marginBottom = "8px";
+
+  const meta = document.createElement("div");
+  meta.textContent = `현재 선택자는 ${matches}개 요소에 적용됩니다.`;
+  meta.style.marginBottom = "8px";
+  meta.style.color = "#f5d6b0";
+
+  const code = document.createElement("code");
+  code.textContent = selector;
+  code.style.display = "block";
+  code.style.whiteSpace = "pre-wrap";
+  code.style.wordBreak = "break-word";
+  code.style.padding = "10px";
+  code.style.background = "rgba(255,255,255,0.08)";
+  code.style.marginBottom = "10px";
+
+  const actions = document.createElement("div");
+  actions.style.display = "flex";
+  actions.style.gap = "8px";
+
+  const applyButton = document.createElement("button");
+  applyButton.type = "button";
+  applyButton.textContent = "적용";
+  applyButton.style.flex = "1";
+
+  const nextButton = document.createElement("button");
+  nextButton.type = "button";
+  nextButton.textContent = total > 1 ? "다른 선택자" : "다른 선택자 없음";
+  nextButton.disabled = total <= 1;
+  nextButton.style.flex = "1";
+
+  const cancelButton = document.createElement("button");
+  cancelButton.type = "button";
+  cancelButton.textContent = "취소";
+  cancelButton.style.flex = "1";
+
+  for (const button of [applyButton, nextButton, cancelButton]) {
+    button.style.border = "1px solid #f7f4eb";
+    button.style.background = "transparent";
+    button.style.color = "#f7f4eb";
+    button.style.padding = "8px 10px";
+    button.style.cursor = "pointer";
+  }
+
+  applyButton.addEventListener("click", onApply);
+  nextButton.addEventListener("click", onNext);
+  cancelButton.addEventListener("click", onCancel);
+
+  actions.append(applyButton, nextButton, cancelButton);
+  panel.append(title, meta, code, actions);
+  document.documentElement.append(panel);
+  return panel;
+}
+
 function startPicker(): void {
   pickerStop?.();
 
   const overlay = buildOverlay();
-  const label = buildPickerLabel();
+  buildPickerLabel();
   let active = true;
+  document.documentElement.style.cursor = "crosshair";
 
   const updateOverlay = (event: MouseEvent): void => {
     if (!active) {
@@ -411,8 +565,7 @@ function startPicker(): void {
     document.removeEventListener("mousemove", updateOverlay, true);
     document.removeEventListener("click", handleClick, true);
     document.removeEventListener("keydown", handleKeydown, true);
-    overlay.remove();
-    label.remove();
+    removePickerArtifacts();
     pickerStop = null;
   };
 
@@ -424,7 +577,7 @@ function startPicker(): void {
     }
   };
 
-  const handleClick = async (event: MouseEvent): Promise<void> => {
+  const handleClick = (event: MouseEvent): void => {
     event.preventDefault();
     event.stopPropagation();
     event.stopImmediatePropagation();
@@ -435,8 +588,39 @@ function startPicker(): void {
       return;
     }
 
-    await hideTargetElement(target);
-    stopPicker();
+    active = false;
+    document.removeEventListener("mousemove", updateOverlay, true);
+    document.removeEventListener("click", handleClick, true);
+
+    const candidates = buildSelectorCandidates(target);
+    let candidateIndex = 0;
+
+    const renderCandidate = (): void => {
+      const selector = candidates[candidateIndex] ?? buildSelector(target);
+      applyPreviewSelector(selector);
+      buildPreviewPanel(
+        selector,
+        candidateIndex,
+        candidates.length,
+        document.querySelectorAll(selector).length,
+        () => {
+          void (async () => {
+            await addSiteRule(hostnameFromUrl(window.location.href), selector);
+            await renderRules();
+            stopPicker();
+          })();
+        },
+        () => {
+          candidateIndex = (candidateIndex + 1) % candidates.length;
+          renderCandidate();
+        },
+        () => {
+          stopPicker();
+        }
+      );
+    };
+
+    renderCandidate();
   };
 
   document.addEventListener("mousemove", updateOverlay, true);

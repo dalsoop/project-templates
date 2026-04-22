@@ -1,4 +1,5 @@
-const STABLE_ATTRIBUTES = ["data-testid", "data-test", "data-qa", "name", "role", "aria-label"] as const;
+const STABLE_ATTRIBUTES = ["data-testid", "data-test", "data-qa", "aria-label", "title", "alt"] as const;
+const MAX_SELECTOR_DEPTH = 4;
 
 function escapeSelector(value: string): string {
   return CSS.escape(value);
@@ -8,21 +9,44 @@ function isUniqueSelector(selector: string, root: Document = document): boolean 
   return root.querySelectorAll(selector).length === 1;
 }
 
-function stableClasses(element: Element): string[] {
-  return Array.from(element.classList)
-    .filter((className) => /^[a-z][a-z0-9_-]{1,30}$/i.test(className))
-    .slice(0, 3);
+function maybeStableClassName(className: string): boolean {
+  if (!/^[a-z][a-z0-9_-]{1,40}$/i.test(className)) {
+    return false;
+  }
+
+  const digitCount = className.replace(/\D/g, "").length;
+  return digitCount <= 3;
 }
 
-function attributeSelector(element: Element): string | null {
+function stableClasses(element: Element): string[] {
+  return Array.from(element.classList).filter(maybeStableClassName).slice(0, 3);
+}
+
+function attributeSelectors(element: Element): string[] {
+  const selectors: string[] = [];
+
   for (const attribute of STABLE_ATTRIBUTES) {
     const value = element.getAttribute(attribute);
     if (value && value.length <= 80) {
-      return `[${attribute}="${escapeSelector(value)}"]`;
+      selectors.push(`${element.localName}[${attribute}="${escapeSelector(value)}"]`);
+      selectors.push(`[${attribute}="${escapeSelector(value)}"]`);
     }
   }
 
-  return null;
+  return selectors;
+}
+
+function classSelectors(element: Element): string[] {
+  const classes = stableClasses(element);
+  const selectors: string[] = [];
+
+  for (let size = 1; size <= classes.length; size += 1) {
+    const joined = classes.slice(0, size).map((className) => `.${escapeSelector(className)}`).join("");
+    selectors.push(`${element.localName}${joined}`);
+    selectors.push(joined);
+  }
+
+  return selectors;
 }
 
 function nthOfTypeSelector(element: Element): string {
@@ -36,50 +60,86 @@ function nthOfTypeSelector(element: Element): string {
   return `${element.localName}:nth-of-type(${index})`;
 }
 
-function simpleSelector(element: Element): string {
+function simpleCandidates(element: Element, options?: { allowNth?: boolean }): string[] {
+  const selectors: string[] = [];
   const id = element.getAttribute("id");
+
   if (id) {
-    const byId = `#${escapeSelector(id)}`;
-    if (isUniqueSelector(byId)) {
-      return byId;
-    }
+    selectors.push(`#${escapeSelector(id)}`);
+    selectors.push(`${element.localName}#${escapeSelector(id)}`);
   }
 
-  const attr = attributeSelector(element);
-  if (attr) {
-    const byAttr = `${element.localName}${attr}`;
-    if (isUniqueSelector(byAttr)) {
-      return byAttr;
-    }
+  selectors.push(...attributeSelectors(element));
+  selectors.push(...classSelectors(element));
+  selectors.push(element.localName);
+
+  if (options?.allowNth) {
+    selectors.push(nthOfTypeSelector(element));
   }
 
-  const classes = stableClasses(element);
-  if (classes.length > 0) {
-    const classSelector = `${element.localName}${classes.map((className) => `.${escapeSelector(className)}`).join("")}`;
-    if (isUniqueSelector(classSelector)) {
-      return classSelector;
-    }
-  }
-
-  return nthOfTypeSelector(element);
+  return Array.from(new Set(selectors));
 }
 
-export function buildSelector(element: Element): string {
+function uniqueDirectCandidates(element: Element, root: Document = document): string[] {
+  return simpleCandidates(element, { allowNth: true }).filter((selector) => isUniqueSelector(selector, root));
+}
+
+function pathSelector(ancestor: Element, target: Element): string {
   const segments: string[] = [];
-  let current: Element | null = element;
+  let current: Element | null = target;
 
-  while (current && current !== document.documentElement) {
-    segments.unshift(simpleSelector(current));
-    const selector = segments.join(" > ");
-
-    if (isUniqueSelector(selector)) {
-      return selector;
-    }
-
+  while (current && current !== ancestor) {
+    const candidates = simpleCandidates(current, { allowNth: true });
+    segments.unshift(candidates[0] ?? current.localName);
     current = current.parentElement;
   }
 
-  return segments.join(" > ");
+  const anchorCandidates = uniqueDirectCandidates(ancestor);
+  const anchor = anchorCandidates[0] ?? ancestor.localName;
+
+  return [anchor, ...segments].join(" > ");
+}
+
+export function buildSelectorCandidates(element: Element, root: Document = document): string[] {
+  const results: string[] = [];
+  const seen = new Set<string>();
+
+  const pushIfUseful = (selector: string): void => {
+    if (!selector || seen.has(selector)) {
+      return;
+    }
+
+    seen.add(selector);
+    results.push(selector);
+  };
+
+  for (const selector of uniqueDirectCandidates(element, root)) {
+    pushIfUseful(selector);
+  }
+
+  let ancestor = element.parentElement;
+  let depth = 0;
+
+  while (ancestor && depth < MAX_SELECTOR_DEPTH) {
+    const anchored = pathSelector(ancestor, element);
+    pushIfUseful(anchored);
+    if (isUniqueSelector(anchored, root)) {
+      break;
+    }
+
+    ancestor = ancestor.parentElement;
+    depth += 1;
+  }
+
+  if (results.length === 0) {
+    pushIfUseful(nthOfTypeSelector(element));
+  }
+
+  return results;
+}
+
+export function buildSelector(element: Element): string {
+  return buildSelectorCandidates(element)[0] ?? element.localName;
 }
 
 export function selectorCss(selectors: string[]): string {
