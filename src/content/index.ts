@@ -1,18 +1,318 @@
-import { PICKER_OVERLAY_ID, STORAGE_KEY, STYLE_ELEMENT_ID } from "../shared/constants.js";
-import { messageTypes } from "../shared/messages.js";
-import { buildSelector, selectorCss } from "../shared/selector.js";
-import {
-  addSiteRule,
-  clearSiteRules,
-  hostnameFromUrl,
-  readActiveSiteState,
-  removeSiteRule,
-  setGlobalEnabled,
-  setSiteEnabled
-} from "../shared/storage.js";
+const STORAGE_KEY = "infocutter.ruleStore";
+const STORAGE_VERSION = 2;
+const STYLE_ELEMENT_ID = "infocutter-style-rules";
+const PICKER_OVERLAY_ID = "infocutter-picker-overlay";
+
+const messageTypes = {
+  getPageState: "infocutter/get-page-state",
+  startPicker: "infocutter/start-picker",
+  hideLastContextTarget: "infocutter/hide-last-context-target",
+  clearSiteRules: "infocutter/clear-site-rules",
+  removeSiteRule: "infocutter/remove-site-rule",
+  toggleSiteEnabled: "infocutter/toggle-site-enabled",
+  toggleGlobalEnabled: "infocutter/toggle-global-enabled"
+} as const;
+
+type SiteRuleSet = {
+  enabled: boolean;
+  selectors: string[];
+  updatedAt: string;
+};
+
+type RuleStore = {
+  version: 2;
+  settings: {
+    globalEnabled: boolean;
+  };
+  sites: Record<string, SiteRuleSet>;
+};
+
+type ActiveSiteState = {
+  globalEnabled: boolean;
+  hostname: string;
+  selectors: string[];
+  selectorCount: number;
+  siteEnabled: boolean;
+  updatedAt: string;
+};
 
 let pickerStop: (() => void) | null = null;
 let lastContextTarget: Element | null = null;
+
+function emptySiteRuleSet(): SiteRuleSet {
+  return {
+    enabled: true,
+    selectors: [],
+    updatedAt: new Date(0).toISOString()
+  };
+}
+
+function emptyStore(): RuleStore {
+  return {
+    version: STORAGE_VERSION,
+    settings: {
+      globalEnabled: true
+    },
+    sites: {}
+  };
+}
+
+function hostnameFromUrl(url: string): string {
+  return new URL(url).hostname.toLowerCase();
+}
+
+function normalizeSiteRuleSet(rawSiteRules: unknown): SiteRuleSet {
+  const partialSiteRules =
+    rawSiteRules && typeof rawSiteRules === "object"
+      ? (rawSiteRules as {
+          enabled?: boolean;
+          selectors?: unknown;
+          updatedAt?: unknown;
+        })
+      : {};
+
+  return {
+    enabled: partialSiteRules.enabled ?? true,
+    selectors: Array.isArray(partialSiteRules.selectors)
+      ? partialSiteRules.selectors.filter((selector): selector is string => typeof selector === "string")
+      : [],
+    updatedAt: typeof partialSiteRules.updatedAt === "string" ? partialSiteRules.updatedAt : new Date(0).toISOString()
+  };
+}
+
+function normalizeStore(candidate: unknown): RuleStore {
+  if (!candidate || typeof candidate !== "object") {
+    return emptyStore();
+  }
+
+  const partialStore = candidate as {
+    settings?: unknown;
+    sites?: unknown;
+    version?: number;
+  };
+
+  const rawSites =
+    partialStore.sites && typeof partialStore.sites === "object"
+      ? partialStore.sites
+      : {};
+
+  const sites: Record<string, SiteRuleSet> = {};
+  for (const [hostname, rawSiteRules] of Object.entries(rawSites)) {
+    sites[hostname] = normalizeSiteRuleSet(rawSiteRules);
+  }
+
+  if (partialStore.version === 1) {
+    return {
+      version: STORAGE_VERSION,
+      settings: {
+        globalEnabled: true
+      },
+      sites
+    };
+  }
+
+  if (partialStore.version !== STORAGE_VERSION) {
+    return emptyStore();
+  }
+
+  return {
+    version: STORAGE_VERSION,
+    settings: {
+      globalEnabled:
+        partialStore.settings &&
+        typeof partialStore.settings === "object" &&
+        "globalEnabled" in partialStore.settings &&
+        typeof partialStore.settings.globalEnabled === "boolean"
+          ? partialStore.settings.globalEnabled
+          : true
+    },
+    sites
+  };
+}
+
+async function readStore(): Promise<RuleStore> {
+  const result = await chrome.storage.local.get(STORAGE_KEY);
+  const candidate: unknown = result[STORAGE_KEY];
+  return normalizeStore(candidate);
+}
+
+async function writeStore(store: RuleStore): Promise<void> {
+  await chrome.storage.local.set({
+    [STORAGE_KEY]: store
+  });
+}
+
+async function addSiteRule(hostname: string, selector: string): Promise<SiteRuleSet> {
+  const store = await readStore();
+  const current = store.sites[hostname] ?? emptySiteRuleSet();
+  const next: SiteRuleSet = {
+    enabled: true,
+    selectors: current.selectors.includes(selector) ? current.selectors : [...current.selectors, selector],
+    updatedAt: new Date().toISOString()
+  };
+
+  store.sites[hostname] = next;
+  await writeStore(store);
+  return next;
+}
+
+async function removeSiteRule(hostname: string, selector: string): Promise<SiteRuleSet> {
+  const store = await readStore();
+  const current = store.sites[hostname] ?? emptySiteRuleSet();
+  const next: SiteRuleSet = {
+    ...current,
+    selectors: current.selectors.filter((existingSelector) => existingSelector !== selector),
+    updatedAt: new Date().toISOString()
+  };
+
+  store.sites[hostname] = next;
+  await writeStore(store);
+  return next;
+}
+
+async function clearSiteRules(hostname: string): Promise<SiteRuleSet> {
+  const store = await readStore();
+  const current = store.sites[hostname] ?? emptySiteRuleSet();
+  const next: SiteRuleSet = {
+    ...current,
+    selectors: [],
+    updatedAt: new Date().toISOString()
+  };
+
+  store.sites[hostname] = next;
+  await writeStore(store);
+  return next;
+}
+
+async function setSiteEnabled(hostname: string, enabled: boolean): Promise<SiteRuleSet> {
+  const store = await readStore();
+  const current = store.sites[hostname] ?? emptySiteRuleSet();
+  const next: SiteRuleSet = {
+    ...current,
+    enabled,
+    updatedAt: new Date().toISOString()
+  };
+
+  store.sites[hostname] = next;
+  await writeStore(store);
+  return next;
+}
+
+async function setGlobalEnabled(globalEnabled: boolean): Promise<RuleStore> {
+  const store = await readStore();
+  const next: RuleStore = {
+    ...store,
+    settings: {
+      globalEnabled
+    }
+  };
+
+  await writeStore(next);
+  return next;
+}
+
+async function readActiveSiteState(url: string): Promise<ActiveSiteState> {
+  const store = await readStore();
+  const hostname = hostnameFromUrl(url);
+  const siteRules = store.sites[hostname] ?? emptySiteRuleSet();
+
+  return {
+    globalEnabled: store.settings.globalEnabled,
+    hostname,
+    selectors: [...siteRules.selectors],
+    selectorCount: siteRules.selectors.length,
+    siteEnabled: siteRules.enabled,
+    updatedAt: siteRules.updatedAt
+  };
+}
+
+function escapeSelector(value: string): string {
+  return CSS.escape(value);
+}
+
+function isUniqueSelector(selector: string, root: Document = document): boolean {
+  return root.querySelectorAll(selector).length === 1;
+}
+
+function stableClasses(element: Element): string[] {
+  return Array.from(element.classList)
+    .filter((className) => /^[a-z][a-z0-9_-]{1,30}$/i.test(className))
+    .slice(0, 3);
+}
+
+function attributeSelector(element: Element): string | null {
+  const stableAttributes = ["data-testid", "data-test", "data-qa", "name", "role", "aria-label"];
+
+  for (const attribute of stableAttributes) {
+    const value = element.getAttribute(attribute);
+    if (value && value.length <= 80) {
+      return `[${attribute}="${escapeSelector(value)}"]`;
+    }
+  }
+
+  return null;
+}
+
+function nthOfTypeSelector(element: Element): string {
+  const parent = element.parentElement;
+  if (!parent) {
+    return element.localName;
+  }
+
+  const siblings = Array.from(parent.children).filter((child) => child.localName === element.localName);
+  const index = siblings.indexOf(element) + 1;
+  return `${element.localName}:nth-of-type(${index})`;
+}
+
+function simpleSelector(element: Element): string {
+  const id = element.getAttribute("id");
+  if (id) {
+    const byId = `#${escapeSelector(id)}`;
+    if (isUniqueSelector(byId)) {
+      return byId;
+    }
+  }
+
+  const attr = attributeSelector(element);
+  if (attr) {
+    const byAttr = `${element.localName}${attr}`;
+    if (isUniqueSelector(byAttr)) {
+      return byAttr;
+    }
+  }
+
+  const classes = stableClasses(element);
+  if (classes.length > 0) {
+    const classSelector = `${element.localName}${classes.map((className) => `.${escapeSelector(className)}`).join("")}`;
+    if (isUniqueSelector(classSelector)) {
+      return classSelector;
+    }
+  }
+
+  return nthOfTypeSelector(element);
+}
+
+function buildSelector(element: Element): string {
+  const segments: string[] = [];
+  let current: Element | null = element;
+
+  while (current && current !== document.documentElement) {
+    segments.unshift(simpleSelector(current));
+    const selector = segments.join(" > ");
+
+    if (isUniqueSelector(selector)) {
+      return selector;
+    }
+
+    current = current.parentElement;
+  }
+
+  return segments.join(" > ");
+}
+
+function selectorCss(selectors: string[]): string {
+  return selectors.map((selector) => `${selector} { display: none !important; }`).join("\n");
+}
 
 function ensureStyleElement(): HTMLStyleElement {
   const existing = document.getElementById(STYLE_ELEMENT_ID);
@@ -127,9 +427,7 @@ function startPicker(): void {
       return;
     }
 
-    const selector = buildSelector(target);
-    await addSiteRule(hostnameFromUrl(window.location.href), selector);
-    await renderRules();
+    await hideTargetElement(target);
     stopPicker();
   };
 
