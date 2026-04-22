@@ -1,5 +1,5 @@
 import type { RuleProfile, RuleStore, StoredRule } from "../shared/types.js";
-import { createProfile, deleteProfile, normalizeStore, renameProfile, setProfileMatchers, writeStore } from "../shared/storage.js";
+import { createProfile, deleteProfile, moveProfile, normalizeStore, renameProfile, setProfileMatchers, writeStore } from "../shared/storage.js";
 
 const STORAGE_KEY = "infocutter.ruleStore";
 
@@ -129,7 +129,7 @@ async function render(): Promise<void> {
   const profileCards: HTMLElement[] = [];
   let totalVisibleRules = 0;
 
-  for (const profile of store.profiles) {
+  for (const [profileIndex, profile] of store.profiles.entries()) {
     const rules = profile.rules.filter((rule) => matchesScopeFilter(rule, scope) && matchesSearch(rule, profile, keyword));
     if (rules.length === 0) {
       continue;
@@ -151,6 +151,10 @@ async function render(): Promise<void> {
     const subtitle = document.createElement("p");
     subtitle.className = "options__site-subtitle";
     subtitle.textContent = `${profile.enabled ? "프로필 사용 중" : "프로필 꺼짐"} · 매처 ${profileMatchersLabel(profile)} · 규칙 ${rules.length}개 표시`;
+
+    const priorityBadge = document.createElement("div");
+    priorityBadge.className = "options__priority-badge";
+    priorityBadge.textContent = `우선순위 ${profileIndex + 1} · 위에 있을수록 먼저 적용`;
 
     const editWrap = document.createElement("div");
     editWrap.className = "options__profile-edit";
@@ -196,6 +200,30 @@ async function render(): Promise<void> {
       })();
     });
 
+    const moveUpButton = document.createElement("button");
+    moveUpButton.type = "button";
+    moveUpButton.textContent = "위로";
+    moveUpButton.className = "options__secondary";
+    moveUpButton.disabled = profileIndex === 0;
+    moveUpButton.addEventListener("click", () => {
+      void (async () => {
+        await moveProfile(profile.id, "up");
+        await render();
+      })();
+    });
+
+    const moveDownButton = document.createElement("button");
+    moveDownButton.type = "button";
+    moveDownButton.textContent = "아래로";
+    moveDownButton.className = "options__secondary";
+    moveDownButton.disabled = profileIndex === store.profiles.length - 1;
+    moveDownButton.addEventListener("click", () => {
+      void (async () => {
+        await moveProfile(profile.id, "down");
+        await render();
+      })();
+    });
+
     const saveProfileButton = document.createElement("button");
     saveProfileButton.type = "button";
     saveProfileButton.textContent = "프로필 저장";
@@ -218,8 +246,8 @@ async function render(): Promise<void> {
       })();
     });
 
-    actions.append(toggleProfileButton, clearProfileButton, saveProfileButton, deleteProfileButton);
-    headingWrap.append(title, subtitle);
+    actions.append(moveUpButton, moveDownButton, toggleProfileButton, clearProfileButton, saveProfileButton, deleteProfileButton);
+    headingWrap.append(title, subtitle, priorityBadge);
     header.append(headingWrap, actions);
     editWrap.append(nameInput, matcherEditor, matcherHint);
 

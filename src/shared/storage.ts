@@ -272,6 +272,28 @@ export async function deleteProfile(profileId: string): Promise<void> {
   await writeStore(store);
 }
 
+export async function moveProfile(profileId: string, direction: "up" | "down"): Promise<void> {
+  const store = await readStore();
+  const index = store.profiles.findIndex((profile) => profile.id === profileId);
+  if (index < 0) {
+    return;
+  }
+
+  const targetIndex = direction === "up" ? index - 1 : index + 1;
+  if (targetIndex < 0 || targetIndex >= store.profiles.length) {
+    return;
+  }
+
+  const nextProfiles = [...store.profiles];
+  const [profile] = nextProfiles.splice(index, 1);
+  if (!profile) {
+    return;
+  }
+  nextProfiles.splice(targetIndex, 0, profile);
+  store.profiles = nextProfiles;
+  await writeStore(store);
+}
+
 export async function addRuleToUrl(url: string, selector: string, frameScope: string | null): Promise<RuleProfile> {
   const store = await readStore();
   const current = findMatchingProfile(store, url) ?? (await ensureProfileForUrl(url));
