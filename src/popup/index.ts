@@ -13,6 +13,8 @@ const refreshButton = document.getElementById("refresh-button");
 const clearButton = document.getElementById("clear-button");
 const ruleList = document.getElementById("rule-list");
 const emptyState = document.getElementById("empty-state");
+const debugSummary = document.getElementById("debug-summary");
+const debugButton = document.getElementById("debug-button");
 
 function assertElement(element: HTMLElement | null, name: string): HTMLElement {
   if (!(element instanceof HTMLElement)) {
@@ -34,6 +36,8 @@ const refreshButtonElement = assertElement(refreshButton, "refresh-button") as H
 const clearButtonElement = assertElement(clearButton, "clear-button") as HTMLButtonElement;
 const ruleListElement = assertElement(ruleList, "rule-list") as HTMLUListElement;
 const emptyStateElement = assertElement(emptyState, "empty-state");
+const debugSummaryElement = assertElement(debugSummary, "debug-summary");
+const debugButtonElement = assertElement(debugButton, "debug-button") as HTMLButtonElement;
 
 type ActiveTab = chrome.tabs.Tab & { id: number };
 type MessagePayload = {
@@ -102,8 +106,54 @@ async function sendMessageToTab(
   });
 }
 
+async function ensureContentScript(tabId: number): Promise<void> {
+  await chrome.scripting.executeScript({
+    target: { tabId },
+    files: ["src/content/index.js"]
+  });
+}
+
+async function pingContentScript(tabId: number): Promise<boolean> {
+  try {
+    const response = await sendMessageToTab(tabId, messageTypes.ping);
+    return response.ok === true;
+  } catch {
+    return false;
+  }
+}
+
+async function ensureConnectedTab(tabId: number): Promise<void> {
+  const isReady = await pingContentScript(tabId);
+  if (isReady) {
+    return;
+  }
+
+  await ensureContentScript(tabId);
+}
+
+async function runDiagnostics(): Promise<void> {
+  const tab = await getActiveTab();
+  if (!isSupportedUrl(tab.url)) {
+    debugSummaryElement.textContent = "진단 결과: 이 페이지는 확장 대상이 아닙니다.";
+    return;
+  }
+
+  const beforeInjection = await pingContentScript(tab.id);
+  if (beforeInjection) {
+    debugSummaryElement.textContent = "진단 결과: 콘텐츠 스크립트가 이미 연결되어 있습니다.";
+    return;
+  }
+
+  await ensureContentScript(tab.id);
+  const afterInjection = await pingContentScript(tab.id);
+  debugSummaryElement.textContent = afterInjection
+    ? "진단 결과: 콘텐츠 스크립트를 다시 연결했습니다."
+    : "진단 결과: 콘텐츠 스크립트 연결에 실패했습니다.";
+}
+
 async function askContentScript<T>(type: string): Promise<T> {
   const tab = await getActiveTab();
+  await ensureConnectedTab(tab.id);
   const response = await sendMessageToTab(tab.id, type);
 
   if (!response.ok || response.data === undefined) {
@@ -115,6 +165,7 @@ async function askContentScript<T>(type: string): Promise<T> {
 
 async function mutateContentScript<T>(type: string, payload?: MessagePayload): Promise<T> {
   const tab = await getActiveTab();
+  await ensureConnectedTab(tab.id);
   const response = await sendMessageToTab(tab.id, type, payload);
 
   if (!response.ok || response.data === undefined) {
@@ -171,9 +222,13 @@ async function refreshState(): Promise<void> {
   const tab = await getActiveTab();
   if (!isSupportedUrl(tab.url)) {
     setUnsupportedState(tab.url);
+    debugSummaryElement.textContent = "진단 결과: chrome 내부 페이지라 콘텐츠 스크립트를 붙일 수 없습니다.";
     return;
   }
 
+  debugSummaryElement.textContent = "진단 결과: 콘텐츠 스크립트 연결 상태를 확인하는 중...";
+  await ensureConnectedTab(tab.id);
+  debugSummaryElement.textContent = "진단 결과: 콘텐츠 스크립트 연결됨.";
   const state = await askContentScript<ActiveSiteState>(messageTypes.getPageState);
   renderState(state);
 }
@@ -181,10 +236,17 @@ async function refreshState(): Promise<void> {
 pickButtonElement.addEventListener("click", () => {
   void (async () => {
     const tab = await getActiveTab();
+    await ensureConnectedTab(tab.id);
     await sendMessageToTab(tab.id, messageTypes.startPicker);
     statusElement.textContent = "선택 모드를 시작했습니다. 페이지로 돌아가서 숨길 요소를 클릭하세요.";
   })().catch((error: unknown) => {
     statusElement.textContent = error instanceof Error ? error.message : "선택 모드 시작에 실패했습니다.";
+  });
+});
+
+debugButtonElement.addEventListener("click", () => {
+  void runDiagnostics().catch((error: unknown) => {
+    debugSummaryElement.textContent = error instanceof Error ? error.message : "진단 실행에 실패했습니다.";
   });
 });
 

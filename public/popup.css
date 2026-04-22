@@ -64,6 +64,13 @@ body {
   background: rgba(255, 250, 240, 0.68);
 }
 
+.popup__debug {
+  margin-top: 16px;
+  padding: 12px;
+  border: 1px solid #c7baa4;
+  background: rgba(255, 255, 255, 0.58);
+}
+
 .popup__guide-title {
   margin: 0 0 8px;
   font-size: 13px;

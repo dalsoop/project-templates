@@ -64,6 +64,13 @@ async function sendTabMessage(tabId: number, type: string): Promise<void> {
   await chrome.tabs.sendMessage(tabId, { type });
 }
 
+async function ensureContentScript(tabId: number): Promise<void> {
+  await chrome.scripting.executeScript({
+    target: { tabId },
+    files: ["src/content/index.js"]
+  });
+}
+
 chrome.runtime.onInstalled.addListener(() => {
   chrome.action.setBadgeTextColor({ color: "#f7f4eb" }).catch(() => {
     // Older Chrome versions may not support badge text color changes.
@@ -81,14 +88,18 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
   }
 
   if (info.menuItemId === contextMenuIds.hideTarget) {
-    void sendTabMessage(tab.id, messageTypes.hideLastContextTarget).catch((error: unknown) => {
+    void ensureContentScript(tab.id)
+      .then(async () => sendTabMessage(tab.id, messageTypes.hideLastContextTarget))
+      .catch((error: unknown) => {
       console.warn("인포커터 우클릭 숨기기에 실패했습니다", error);
     });
     return;
   }
 
   if (info.menuItemId === contextMenuIds.startPicker) {
-    void sendTabMessage(tab.id, messageTypes.startPicker).catch((error: unknown) => {
+    void ensureContentScript(tab.id)
+      .then(async () => sendTabMessage(tab.id, messageTypes.startPicker))
+      .catch((error: unknown) => {
       console.warn("인포커터 선택 모드 시작에 실패했습니다", error);
     });
   }

@@ -4,6 +4,7 @@ const STYLE_ELEMENT_ID = "infocutter-style-rules";
 const PICKER_OVERLAY_ID = "infocutter-picker-overlay";
 
 const messageTypes = {
+  ping: "infocutter/ping",
   getPageState: "infocutter/get-page-state",
   startPicker: "infocutter/start-picker",
   hideLastContextTarget: "infocutter/hide-last-context-target",
@@ -12,6 +13,13 @@ const messageTypes = {
   toggleSiteEnabled: "infocutter/toggle-site-enabled",
   toggleGlobalEnabled: "infocutter/toggle-global-enabled"
 } as const;
+
+const infocutterGlobal = globalThis as typeof globalThis & {
+  __INFOCUTTER_CONTENT_LOADED__?: boolean;
+};
+
+if (!infocutterGlobal.__INFOCUTTER_CONTENT_LOADED__) {
+infocutterGlobal.__INFOCUTTER_CONTENT_LOADED__ = true;
 
 type SiteRuleSet = {
   enabled: boolean;
@@ -461,6 +469,17 @@ chrome.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) =
 
     const type = "type" in message ? message.type : null;
 
+    if (type === messageTypes.ping) {
+      sendResponse({
+        ok: true,
+        data: {
+          ready: true,
+          url: window.location.href
+        }
+      });
+      return;
+    }
+
     if (type === messageTypes.getPageState) {
       sendResponse({
         ok: true,
@@ -568,3 +587,4 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
 });
 
 void renderRules();
+}

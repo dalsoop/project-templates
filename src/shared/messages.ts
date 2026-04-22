@@ -1,4 +1,5 @@
 export const messageTypes = {
+  ping: "infocutter/ping",
   getPageState: "infocutter/get-page-state",
   startPicker: "infocutter/start-picker",
   hideLastContextTarget: "infocutter/hide-last-context-target",
