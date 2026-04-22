@@ -1,10 +1,13 @@
 export const messageTypes = {
   ensureTabReady: "infocutter/ensure-tab-ready",
+  getPickerFocus: "infocutter/get-picker-focus",
   ping: "infocutter/ping",
   getPageState: "infocutter/get-page-state",
   runDiagnostics: "infocutter/run-diagnostics",
+  stopPicker: "infocutter/stop-picker",
   startPickerFlow: "infocutter/start-picker-flow",
   startPicker: "infocutter/start-picker",
+  updatePickerFocus: "infocutter/update-picker-focus",
   hideLastContextTarget: "infocutter/hide-last-context-target",
   clearSiteRules: "infocutter/clear-site-rules",
   removeSiteRule: "infocutter/remove-site-rule",

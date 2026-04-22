@@ -7,6 +7,8 @@ const contextMenuIds = {
   startPicker: "infocutter-start-picker"
 } as const;
 
+const pickerFocusByTab = new Map<number, { focused: boolean; frameScope: string | null; label: string }>();
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => {
     setTimeout(resolve, ms);
@@ -65,7 +67,12 @@ function createContextMenus(): void {
   });
 }
 
-async function sendTabMessage(tabId: number, type: string): Promise<void> {
+async function sendTabMessage(tabId: number, type: string, frameId?: number): Promise<void> {
+  if (typeof frameId === "number") {
+    await chrome.tabs.sendMessage(tabId, { type }, { frameId });
+    return;
+  }
+
   await chrome.tabs.sendMessage(tabId, { type });
 }
 
@@ -108,6 +115,10 @@ async function ensureTabReady(tabId: number): Promise<boolean> {
   return false;
 }
 
+async function sendMessageToTopFrame(tabId: number, type: string): Promise<void> {
+  await sendTabMessage(tabId, type, 0);
+}
+
 async function sendMessageToAllFrames(tabId: number, type: string): Promise<void> {
   const frames = await chrome.webNavigation.getAllFrames({ tabId });
   const resolvedFrames = frames ?? [];
@@ -125,7 +136,7 @@ async function sendMessageToAllFrames(tabId: number, type: string): Promise<void
       try {
         await chrome.tabs.sendMessage(tabId, { type }, { frameId });
       } catch {
-        // Ignore per-frame failures.
+        // Ignore per-frame failures during cleanup.
       }
     })
   );
@@ -148,10 +159,11 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
   }
 
   const tabId = tab.id;
+  const frameId = typeof info.frameId === "number" ? info.frameId : undefined;
 
   if (info.menuItemId === contextMenuIds.hideTarget) {
     void ensureContentScript(tabId)
-      .then(async () => sendTabMessage(tabId, messageTypes.hideLastContextTarget))
+      .then(async () => sendTabMessage(tabId, messageTypes.hideLastContextTarget, frameId))
       .catch((error: unknown) => {
       console.warn("인포커터 우클릭 숨기기에 실패했습니다", error);
     });
@@ -160,7 +172,10 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
 
   if (info.menuItemId === contextMenuIds.startPicker) {
     void ensureContentScript(tabId)
-      .then(async () => sendMessageToAllFrames(tabId, messageTypes.startPicker))
+      .then(async () => {
+        await sendMessageToAllFrames(tabId, messageTypes.stopPicker);
+        await sendMessageToTopFrame(tabId, messageTypes.startPicker);
+      })
       .catch((error: unknown) => {
       console.warn("인포커터 선택 모드 시작에 실패했습니다", error);
     });
@@ -185,6 +200,18 @@ chrome.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) =
 
     if (type === messageTypes.ensureTabReady) {
       sendResponse({ ok: await ensureTabReady(tabId) });
+      return;
+    }
+
+    if (type === messageTypes.getPickerFocus) {
+      sendResponse({
+        ok: true,
+        data: pickerFocusByTab.get(tabId) ?? {
+          focused: false,
+          frameScope: null,
+          label: "선택 모드 비활성"
+        }
+      });
       return;
     }
 
@@ -234,7 +261,33 @@ chrome.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) =
         return;
       }
 
-      await sendMessageToAllFrames(tabId, messageTypes.startPicker);
+      await sendMessageToAllFrames(tabId, messageTypes.stopPicker);
+      pickerFocusByTab.set(tabId, {
+        focused: true,
+        frameScope: null,
+        label: "메인 문서 선택 중"
+      });
+      await sendMessageToTopFrame(tabId, messageTypes.startPicker);
+      sendResponse({ ok: true });
+      return;
+    }
+
+    if (type === messageTypes.updatePickerFocus) {
+      const senderTabId = _sender.tab?.id;
+      if (typeof senderTabId !== "number") {
+        sendResponse({ ok: false });
+        return;
+      }
+
+      const focused = "focused" in message && typeof message.focused === "boolean" ? message.focused : false;
+      const frameScope = "frameScope" in message && typeof message.frameScope === "string" ? message.frameScope : null;
+      const label = "label" in message && typeof message.label === "string" ? message.label : "선택 모드 상태 미상";
+
+      pickerFocusByTab.set(senderTabId, {
+        focused,
+        frameScope,
+        label
+      });
       sendResponse({ ok: true });
       return;
     }

@@ -1,10 +1,18 @@
 import { STORAGE_KEY, STORAGE_VERSION } from "./constants.js";
 import type { ActiveSiteState, RuleProfile, RuleStore, StoredRule } from "./types.js";
 
+function generateId(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+
+  return `ic-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
 function emptyProfile(): RuleProfile {
   return {
     enabled: true,
-    id: crypto.randomUUID(),
+    id: generateId(),
     matchers: [],
     name: "새 프로필",
     rules: [],
@@ -78,7 +86,7 @@ function normalizeProfile(rawProfile: unknown): RuleProfile | null {
 
   return {
     enabled: typeof enabledValue === "boolean" ? enabledValue : true,
-    id: typeof idValue === "string" && idValue.length > 0 ? idValue : crypto.randomUUID(),
+    id: typeof idValue === "string" && idValue.length > 0 ? idValue : generateId(),
     matchers,
     name: typeof nameValue === "string" && nameValue.length > 0
       ? nameValue
@@ -107,7 +115,7 @@ function normalizeLegacySiteRules(hostname: string, rawSiteRules: unknown): Rule
 
   return {
     enabled: typeof enabledValue === "boolean" ? enabledValue : true,
-    id: crypto.randomUUID(),
+    id: generateId(),
     matchers: [matcher],
     name: hostname,
     rules,

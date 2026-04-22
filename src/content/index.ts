@@ -9,9 +9,11 @@ const PICKER_FRAME_MESSAGE_TYPE = "infocutter/start-picker-in-frame";
 const PICKER_FRAME_ACK_TYPE = "infocutter/start-picker-in-frame-ack";
 
 const messageTypes = {
+  updatePickerFocus: "infocutter/update-picker-focus",
   ping: "infocutter/ping",
   getPageState: "infocutter/get-page-state",
   startPicker: "infocutter/start-picker",
+  stopPicker: "infocutter/stop-picker",
   hideLastContextTarget: "infocutter/hide-last-context-target",
   clearSiteRules: "infocutter/clear-site-rules",
   removeSiteRule: "infocutter/remove-site-rule",
@@ -67,9 +69,17 @@ type ActiveSiteState = {
 let pickerStop: (() => void) | null = null;
 let lastContextTarget: Element | null = null;
 
+function generateId(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+
+  return `ic-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
 function emptySiteRuleSet(): SiteRuleSet {
   return {
-    id: crypto.randomUUID(),
+    id: generateId(),
     matchers: [],
     name: "새 프로필",
     enabled: true,
@@ -125,6 +135,17 @@ function currentFrameScope(): string | null {
 function currentFrameLabel(): string {
   const frameScope = currentFrameScope();
   return frameScope ? `iframe 안 선택 중: ${frameScope}` : "메인 문서에서 선택 중";
+}
+
+function updatePickerFocusState(focused: boolean, label: string): void {
+  void chrome.runtime.sendMessage({
+    type: messageTypes.updatePickerFocus,
+    focused,
+    frameScope: currentFrameScope(),
+    label
+  }).catch(() => {
+    // Ignore focus reporting failures.
+  });
 }
 
 function iframeAccessMode(iframeElement: HTMLIFrameElement): "same-origin" | "cross-origin" | "unknown" {
@@ -193,7 +214,7 @@ function normalizeSiteRuleSet(rawSiteRules: unknown): SiteRuleSet {
     .filter((rule): rule is SiteRuleSet["rules"][number] => rule !== null);
 
   return {
-    id: typeof idValue === "string" && idValue.length > 0 ? idValue : crypto.randomUUID(),
+    id: typeof idValue === "string" && idValue.length > 0 ? idValue : generateId(),
     matchers: Array.isArray(matchersValue)
       ? matchersValue.filter((matcher): matcher is string => typeof matcher === "string" && matcher.length > 0)
       : [],
@@ -903,7 +924,7 @@ async function startPickerInIframe(iframeElement: HTMLIFrameElement): Promise<bo
     return false;
   }
 
-  const requestId = crypto.randomUUID();
+  const requestId = generateId();
 
   return new Promise((resolve) => {
     const timeoutId = window.setTimeout(() => {
@@ -948,6 +969,7 @@ function startPicker(): void {
   buildPickerLabel();
   let active = true;
   document.documentElement.style.cursor = "crosshair";
+  updatePickerFocusState(true, currentFrameLabel());
 
   const updateOverlay = (event: MouseEvent): void => {
     if (!active) {
@@ -973,6 +995,7 @@ function startPicker(): void {
     document.removeEventListener("keydown", handleKeydown, true);
     removePickerArtifacts();
     pickerStop = null;
+    updatePickerFocusState(false, "선택 모드 비활성");
   };
 
   pickerStop = stopPicker;
@@ -1026,6 +1049,7 @@ function startPicker(): void {
             overlay.remove();
             document.documentElement.style.cursor = "";
             pickerStop = null;
+            updatePickerFocusState(false, "iframe 내부 선택 대기 중");
           })();
         },
         () => {
@@ -1158,6 +1182,12 @@ chrome.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) =
 
     if (type === messageTypes.startPicker) {
       startPicker();
+      sendResponse({ ok: true });
+      return;
+    }
+
+    if (type === messageTypes.stopPicker) {
+      pickerStop?.();
       sendResponse({ ok: true });
       return;
     }

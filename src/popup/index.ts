@@ -6,6 +6,7 @@ const ruleCount = document.getElementById("rule-count");
 const siteState = document.getElementById("site-state");
 const globalState = document.getElementById("global-state");
 const status = document.getElementById("status");
+const pickerState = document.getElementById("picker-state");
 const pickButton = document.getElementById("pick-button");
 const toggleSiteButton = document.getElementById("toggle-site-button");
 const toggleGlobalButton = document.getElementById("toggle-global-button");
@@ -30,6 +31,7 @@ const ruleCountElement = assertElement(ruleCount, "rule-count");
 const siteStateElement = assertElement(siteState, "site-state");
 const globalStateElement = assertElement(globalState, "global-state");
 const statusElement = assertElement(status, "status");
+const pickerStateElement = assertElement(pickerState, "picker-state");
 const pickButtonElement = assertElement(pickButton, "pick-button") as HTMLButtonElement;
 const toggleSiteButtonElement = assertElement(toggleSiteButton, "toggle-site-button") as HTMLButtonElement;
 const toggleGlobalButtonElement = assertElement(toggleGlobalButton, "toggle-global-button") as HTMLButtonElement;
@@ -178,6 +180,15 @@ async function runDiagnostics(): Promise<void> {
   debugSummaryElement.textContent = response.data ?? "진단 결과를 확인하지 못했습니다.";
 }
 
+async function refreshPickerFocus(tabId: number): Promise<void> {
+  const response = await sendRuntimeMessage<{ ok: boolean; data?: { focused: boolean; frameScope: string | null; label: string } }>({
+    type: messageTypes.getPickerFocus,
+    tabId
+  });
+
+  pickerStateElement.textContent = response.data?.label ?? "선택 모드 상태를 확인하지 못했습니다.";
+}
+
 async function askContentScript<T>(type: string): Promise<T> {
   const tab = await getActiveTab();
   await ensureConnectedTab(tab.id);
@@ -298,12 +309,14 @@ async function refreshState(): Promise<void> {
   if (!isSupportedUrl(tab.url)) {
     setUnsupportedState(tab.url);
     debugSummaryElement.textContent = "진단 결과: chrome 내부 페이지라 콘텐츠 스크립트를 붙일 수 없습니다.";
+    pickerStateElement.textContent = "선택 포커스 없음";
     return;
   }
 
   debugSummaryElement.textContent = "진단 결과: 콘텐츠 스크립트 연결 상태를 확인하는 중...";
   await ensureConnectedTab(tab.id);
   debugSummaryElement.textContent = "진단 결과: 콘텐츠 스크립트 연결됨.";
+  await refreshPickerFocus(tab.id);
   const state = await askContentScript<ActiveSiteState>(messageTypes.getPageState);
   renderState(state);
 }
@@ -319,6 +332,7 @@ pickButtonElement.addEventListener("click", () => {
     if (!response.ok) {
       throw new Error(response.data ?? "선택 모드 시작에 실패했습니다.");
     }
+    await refreshPickerFocus(tab.id);
     statusElement.textContent = "선택 모드를 시작했습니다. 페이지로 돌아가서 숨길 요소를 클릭하세요.";
   })().catch((error: unknown) => {
     statusElement.textContent = error instanceof Error ? error.message : "선택 모드 시작에 실패했습니다.";
