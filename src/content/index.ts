@@ -2227,22 +2227,6 @@ function startPicker(): void {
   };
 
   const handleViewportChange = (): void => {
-    if (active && lastPointerPosition) {
-      hoverCandidates = candidateTargetsAtPoint(lastPointerPosition.clientX, lastPointerPosition.clientY);
-      if (hoverCandidates.length === 0) {
-        hoverCandidateIndex = 0;
-        currentOverlaySelector = null;
-        currentOverlayFallbackElement = null;
-        syncOverlay();
-        setPickerStatusBadge("선택 상태: 후보 없음", "#fde68a");
-        return;
-      }
-
-      hoverCandidateIndex = Math.min(hoverCandidateIndex, hoverCandidates.length - 1);
-      renderHoverTarget();
-      return;
-    }
-
     syncOverlay();
   };
 

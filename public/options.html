@@ -42,6 +42,16 @@
         <p id="url-test-result" class="options__meta">테스트할 URL을 입력하면 현재 우선순위 기준으로 어떤 프로필이 적용되는지 보여줍니다.</p>
       </section>
 
+      <section class="options__create-card">
+        <h2 class="options__section-title">템플릿 서버</h2>
+        <div class="options__template-toolbar">
+          <input id="template-server-url" class="options__input" type="text" placeholder="예: http://127.0.0.1:41800" />
+          <button id="refresh-templates-button" type="button">템플릿 불러오기</button>
+        </div>
+        <p id="template-status" class="options__meta">로컬 템플릿 서버를 켜면 네이버 같은 사이트용 템플릿을 불러와 적용할 수 있습니다.</p>
+        <div id="template-list" class="options__template-list"></div>
+      </section>
+
       <section class="options__status-card">
         <p id="global-status" class="options__meta">전역 상태를 불러오는 중...</p>
         <p id="summary" class="options__meta">규칙 통계를 불러오는 중...</p>
