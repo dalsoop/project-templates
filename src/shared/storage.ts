@@ -27,6 +27,7 @@ function emptyProfile(): RuleProfile {
     matchers: [],
     name: "새 프로필",
     rules: [],
+    sourceTemplateSlug: null,
     updatedAt: new Date(0).toISOString()
   };
 }
@@ -151,6 +152,7 @@ function normalizeProfile(rawProfile: unknown): RuleProfile | null {
   const matchersValue: unknown = Reflect.get(rawProfile, "matchers");
   const nameValue: unknown = Reflect.get(rawProfile, "name");
   const rulesValue: unknown = Reflect.get(rawProfile, "rules");
+  const sourceTemplateSlugValue: unknown = Reflect.get(rawProfile, "sourceTemplateSlug");
   const updatedAtValue: unknown = Reflect.get(rawProfile, "updatedAt");
 
   const rules = Array.isArray(rulesValue)
@@ -176,6 +178,9 @@ function normalizeProfile(rawProfile: unknown): RuleProfile | null {
         ? profileNameFromMatcher(matchers[0])
         : "이름 없는 프로필",
     rules: reconciled.rules,
+    sourceTemplateSlug: typeof sourceTemplateSlugValue === "string" && sourceTemplateSlugValue.length > 0
+      ? sourceTemplateSlugValue
+      : null,
     updatedAt: typeof updatedAtValue === "string" ? updatedAtValue : new Date(0).toISOString()
   };
 }
@@ -202,6 +207,7 @@ function normalizeLegacySiteRules(hostname: string, rawSiteRules: unknown): Rule
     matchers: [matcher],
     name: hostname,
     rules,
+    sourceTemplateSlug: null,
     updatedAt: typeof updatedAtValue === "string" ? updatedAtValue : new Date(0).toISOString()
   };
 }
@@ -398,6 +404,67 @@ export async function renameProfile(profileId: string, name: string): Promise<Ru
     name: name.trim() || profile.name,
     updatedAt: new Date().toISOString()
   }));
+}
+
+export async function upsertProfileFromTemplate(template: {
+  slug: string;
+  name: string;
+  description?: string;
+  matchers: string[];
+  cards: {
+    id: string;
+    name: string;
+    enabled?: boolean;
+    rules: {
+      frameScope: string | null;
+      selector: string;
+    }[];
+  }[];
+}): Promise<RuleProfile> {
+  const store = await readStore();
+  const existingProfile = store.profiles.find((profile) => profile.sourceTemplateSlug === template.slug) ?? null;
+  const timestamp = new Date().toISOString();
+
+  const cards = template.cards.map((card) => ({
+    createdAt: timestamp,
+    enabled: typeof card.enabled === "boolean" ? card.enabled : true,
+    id: `tpl:${template.slug}:${card.id}`,
+    name: card.name,
+    updatedAt: timestamp
+  }));
+
+  const rules = template.cards.flatMap((card) => {
+    const cardId = `tpl:${template.slug}:${card.id}`;
+    return card.rules.map((rule) => ({
+      cardId,
+      cardName: card.name,
+      createdAt: timestamp,
+      frameScope: rule.frameScope,
+      selector: rule.selector
+    }));
+  });
+
+  const nextProfile: RuleProfile = {
+    cards,
+    enabled: true,
+    id: existingProfile?.id ?? generateId(),
+    matchers: template.matchers,
+    name: template.name,
+    rules,
+    sourceTemplateSlug: template.slug,
+    updatedAt: timestamp
+  };
+
+  if (existingProfile) {
+    store.profiles = store.profiles.map((profile) => (
+      profile.id === existingProfile.id ? nextProfile : profile
+    ));
+  } else {
+    store.profiles.push(nextProfile);
+  }
+
+  await writeStore(store);
+  return nextProfile;
 }
 
 export async function setProfileMatchers(profileId: string, matchers: string[]): Promise<RuleProfile | null> {

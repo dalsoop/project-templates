@@ -31,6 +31,7 @@ export type RuleProfile = {
   matchers: string[];
   name: string;
   rules: StoredRule[];
+  sourceTemplateSlug: string | null;
   updatedAt: string;
 };
 

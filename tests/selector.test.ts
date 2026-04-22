@@ -63,6 +63,7 @@ void test("normalizeStore migrates version 1 shape to the current version", () =
             selector: ".banner"
           }
         ],
+        sourceTemplateSlug: null,
         updatedAt: "2026-01-01T00:00:00.000Z"
       }
     ]
@@ -175,6 +176,7 @@ void test("removeRuleFromProfile removes only the targeted card rule", async () 
             selector: ".banner"
           }
         ],
+        sourceTemplateSlug: null,
         updatedAt: "2026-04-22T00:00:00.000Z"
       }
     ]
@@ -245,6 +247,7 @@ void test("setCardEnabled updates card metadata without removing rules", async (
             selector: ".banner"
           }
         ],
+        sourceTemplateSlug: null,
         updatedAt: "2026-04-22T00:00:00.000Z"
       }
     ]

@@ -1,0 +1,55 @@
+{
+  "version": 1,
+  "slug": "naver-home-ads-basic",
+  "name": "네이버 홈 광고 기본",
+  "description": "네이버 메인 우측/상단 광고 iframe과 배너 영역을 기본적으로 숨깁니다.",
+  "matchers": [
+    "https://www.naver.com/*"
+  ],
+  "cards": [
+    {
+      "id": "naver-top-ad",
+      "name": "상단 메인 광고",
+      "enabled": true,
+      "note": "타임보드와 상단 대형 광고 영역",
+      "rules": [
+        {
+          "frameScope": null,
+          "selector": "#ad_timeboard"
+        },
+        {
+          "frameScope": null,
+          "selector": "#ad_timeboard_tgtLREC"
+        }
+      ]
+    },
+    {
+      "id": "naver-right-ads",
+      "name": "우측 광고 블록",
+      "enabled": true,
+      "note": "로그인 영역 아래 우측 광고 블록과 하단 광고 슬롯",
+      "rules": [
+        {
+          "frameScope": null,
+          "selector": "#right-ad-1"
+        },
+        {
+          "frameScope": null,
+          "selector": "#right-ad-1_tgtLREC"
+        },
+        {
+          "frameScope": null,
+          "selector": "#pc-main-ad-div-p_main_rightside_understock"
+        },
+        {
+          "frameScope": null,
+          "selector": "#pc-main-ad-div-p_main_rightbottom_widget"
+        },
+        {
+          "frameScope": null,
+          "selector": "#pc-main-ad-div-p_main_rightbottom_widget_tgtLREC"
+        }
+      ]
+    }
+  ]
+}

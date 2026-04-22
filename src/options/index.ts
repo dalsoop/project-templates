@@ -1,7 +1,9 @@
 import type { RuleProfile, RuleStore, StoredRule } from "../shared/types.js";
-import { createProfile, deleteProfile, findMatchingProfile, groupRulesByCard, moveProfile, normalizeStore, renameCardInProfile, removeCardFromProfile, renameProfile, setCardEnabled, setProfileMatchers, writeStore } from "../shared/storage.js";
+import { createProfile, deleteProfile, findMatchingProfile, groupRulesByCard, moveProfile, normalizeStore, renameCardInProfile, removeCardFromProfile, renameProfile, setCardEnabled, setProfileMatchers, upsertProfileFromTemplate, writeStore } from "../shared/storage.js";
 
 const STORAGE_KEY = "infocutter.ruleStore";
+const TEMPLATE_SERVER_URL_KEY = "infocutter.templateServerUrl";
+const DEFAULT_TEMPLATE_SERVER_URL = "http://127.0.0.1:41800";
 
 const searchInput = document.getElementById("search-input");
 const scopeFilter = document.getElementById("scope-filter");
@@ -13,6 +15,10 @@ const createProfileButton = document.getElementById("create-profile-button");
 const urlTestInput = document.getElementById("url-test-input");
 const urlTestButton = document.getElementById("url-test-button");
 const urlTestResult = document.getElementById("url-test-result");
+const templateServerUrl = document.getElementById("template-server-url");
+const refreshTemplatesButton = document.getElementById("refresh-templates-button");
+const templateStatus = document.getElementById("template-status");
+const templateList = document.getElementById("template-list");
 const globalStatus = document.getElementById("global-status");
 const summary = document.getElementById("summary");
 const siteList = document.getElementById("site-list");
@@ -36,6 +42,10 @@ const createProfileButtonElement = assertElement(createProfileButton, "create-pr
 const urlTestInputElement = assertElement(urlTestInput, "url-test-input") as HTMLInputElement;
 const urlTestButtonElement = assertElement(urlTestButton, "url-test-button") as HTMLButtonElement;
 const urlTestResultElement = assertElement(urlTestResult, "url-test-result") as HTMLParagraphElement;
+const templateServerUrlElement = assertElement(templateServerUrl, "template-server-url") as HTMLInputElement;
+const refreshTemplatesButtonElement = assertElement(refreshTemplatesButton, "refresh-templates-button") as HTMLButtonElement;
+const templateStatusElement = assertElement(templateStatus, "template-status") as HTMLParagraphElement;
+const templateListElement = assertElement(templateList, "template-list") as HTMLDivElement;
 const globalStatusElement = assertElement(globalStatus, "global-status") as HTMLParagraphElement;
 const summaryElement = assertElement(summary, "summary") as HTMLParagraphElement;
 const siteListElement = assertElement(siteList, "site-list") as HTMLDivElement;
@@ -44,6 +54,200 @@ const emptyStateElement = assertElement(emptyState, "empty-state") as HTMLParagr
 async function readStore(): Promise<RuleStore> {
   const result = await chrome.storage.local.get(STORAGE_KEY);
   return normalizeStore(result[STORAGE_KEY]);
+}
+
+async function readTemplateServerUrl(): Promise<string> {
+  const result = await chrome.storage.local.get(TEMPLATE_SERVER_URL_KEY);
+  return typeof result[TEMPLATE_SERVER_URL_KEY] === "string"
+    ? result[TEMPLATE_SERVER_URL_KEY]
+    : DEFAULT_TEMPLATE_SERVER_URL;
+}
+
+async function writeTemplateServerUrl(serverUrl: string): Promise<void> {
+  await chrome.storage.local.set({
+    [TEMPLATE_SERVER_URL_KEY]: serverUrl.trim() || DEFAULT_TEMPLATE_SERVER_URL
+  });
+}
+
+type RemoteTemplate = {
+  version: number;
+  slug: string;
+  name: string;
+  description: string;
+  matchers: string[];
+  cards: {
+    id: string;
+    name: string;
+    enabled?: boolean;
+    note?: string;
+    rules: {
+      frameScope: string | null;
+      selector: string;
+    }[];
+  }[];
+};
+
+type RemoteTemplateSummary = {
+  slug: string;
+  name: string;
+  description: string;
+  matcherCount: number;
+  cardCount: number;
+  ruleCount: number;
+};
+
+async function fetchJson<T>(serverUrl: string, pathname: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(new URL(pathname, serverUrl), init);
+  if (!response.ok) {
+    throw new Error(`템플릿 서버 요청 실패: ${response.status}`);
+  }
+  return response.json() as Promise<T>;
+}
+
+function slugFromProfileName(name: string): string {
+  return name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9가-힣._-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    || "template";
+}
+
+function profileToTemplate(profile: RuleProfile, slug: string, name: string): RemoteTemplate {
+  const groupedCards = groupRulesByCard(profile.rules, profile.cards);
+  return {
+    version: 1,
+    slug,
+    name,
+    description: `${profile.name} 프로필에서 저장한 템플릿`,
+    matchers: [...profile.matchers],
+    cards: groupedCards.map((card) => ({
+      id: card.cardId.replace(/^tpl:[^:]+:/, ""),
+      name: card.cardName,
+      enabled: card.enabled,
+      note: "",
+      rules: card.rules.map((rule) => ({
+        frameScope: rule.frameScope,
+        selector: rule.selector
+      }))
+    }))
+  };
+}
+
+async function renderTemplates(): Promise<void> {
+  const serverUrl = templateServerUrlElement.value.trim() || DEFAULT_TEMPLATE_SERVER_URL;
+  const store = await readStore();
+  templateListElement.replaceChildren();
+
+  try {
+    const response = await fetchJson<{ ok: boolean; templates: RemoteTemplateSummary[] }>(serverUrl, "/templates");
+    const templates = response.templates;
+    templateStatusElement.textContent = `템플릿 서버 연결됨 · ${templates.length}개 템플릿`;
+
+    if (templates.length === 0) {
+      templateListElement.textContent = "템플릿이 아직 없습니다.";
+      return;
+    }
+
+    const cards = templates.map((template) => {
+      const card = document.createElement("section");
+      card.className = "options__template-card";
+
+      const title = document.createElement("h3");
+      title.className = "options__template-title";
+      title.textContent = template.name;
+
+      const description = document.createElement("p");
+      description.className = "options__template-description";
+      description.textContent = template.description || "설명 없음";
+
+      const meta = document.createElement("p");
+      meta.className = "options__template-meta";
+      meta.textContent = `slug ${template.slug} · matcher ${template.matcherCount}개 · 카드 ${template.cardCount}개 · 규칙 ${template.ruleCount}개`;
+
+      const actions = document.createElement("div");
+      actions.className = "options__template-actions";
+      const linkedProfile = store.profiles.find((profile) => profile.sourceTemplateSlug === template.slug) ?? null;
+
+      const applyButton = document.createElement("button");
+      applyButton.type = "button";
+      applyButton.textContent = "적용";
+      applyButton.addEventListener("click", () => {
+        void (async () => {
+          const detail = await fetchJson<{ ok: boolean; template: RemoteTemplate }>(serverUrl, `/templates/${template.slug}`);
+          await upsertProfileFromTemplate(detail.template);
+          templateStatusElement.textContent = `${detail.template.name} 템플릿을 적용했습니다.`;
+          await render();
+        })().catch((error: unknown) => {
+          templateStatusElement.textContent = error instanceof Error ? error.message : "템플릿 적용에 실패했습니다.";
+        });
+      });
+
+      const inspectButton = document.createElement("button");
+      inspectButton.type = "button";
+      inspectButton.textContent = "상세";
+      inspectButton.className = "options__secondary";
+      inspectButton.addEventListener("click", () => {
+        void (async () => {
+          const detail = await fetchJson<{ ok: boolean; template: RemoteTemplate }>(serverUrl, `/templates/${template.slug}`);
+          templateStatusElement.textContent = JSON.stringify(detail.template, null, 2);
+        })().catch((error: unknown) => {
+          templateStatusElement.textContent = error instanceof Error ? error.message : "템플릿 상세 조회에 실패했습니다.";
+        });
+      });
+
+      const updateButton = document.createElement("button");
+      updateButton.type = "button";
+      updateButton.textContent = linkedProfile ? "연결 프로필로 갱신" : "연결 프로필 없음";
+      updateButton.className = "options__secondary";
+      updateButton.disabled = !linkedProfile;
+      updateButton.addEventListener("click", () => {
+        if (!linkedProfile) {
+          return;
+        }
+        void (async () => {
+          await fetchJson<{ ok: boolean; template: RemoteTemplate }>(serverUrl, `/templates/${template.slug}`, {
+            body: JSON.stringify(profileToTemplate(linkedProfile, template.slug, linkedProfile.name)),
+            headers: {
+              "content-type": "application/json"
+            },
+            method: "PUT"
+          });
+          templateStatusElement.textContent = `${template.name} 템플릿을 연결된 프로필 내용으로 갱신했습니다.`;
+          await renderTemplates();
+        })().catch((error: unknown) => {
+          templateStatusElement.textContent = error instanceof Error ? error.message : "템플릿 갱신에 실패했습니다.";
+        });
+      });
+
+      const deleteButton = document.createElement("button");
+      deleteButton.type = "button";
+      deleteButton.textContent = "삭제";
+      deleteButton.className = "options__secondary";
+      deleteButton.addEventListener("click", () => {
+        void (async () => {
+          await fetchJson<{ ok: boolean; slug: string }>(serverUrl, `/templates/${template.slug}`, {
+            method: "DELETE"
+          });
+          templateStatusElement.textContent = `${template.name} 템플릿을 삭제했습니다.`;
+          await renderTemplates();
+        })().catch((error: unknown) => {
+          templateStatusElement.textContent = error instanceof Error ? error.message : "템플릿 삭제에 실패했습니다.";
+        });
+      });
+
+      actions.append(applyButton, inspectButton, updateButton, deleteButton);
+      card.append(title, description, meta, actions);
+      return card;
+    });
+
+    templateListElement.replaceChildren(...cards);
+  } catch (error) {
+    templateStatusElement.textContent = error instanceof Error
+      ? `${error.message} · 템플릿 서버를 먼저 실행하세요.`
+      : "템플릿 서버에 연결하지 못했습니다.";
+    templateListElement.replaceChildren();
+  }
 }
 
 function frameScopeLabel(frameScope: string | null): string {
@@ -192,7 +396,7 @@ async function render(): Promise<void> {
 
     const subtitle = document.createElement("p");
     subtitle.className = "options__site-subtitle";
-    subtitle.textContent = `${profile.enabled ? "프로필 사용 중" : "프로필 꺼짐"} · 매처 ${profileMatchersLabel(profile)} · 카드 ${groupRulesByCard(profile.rules, profile.cards).length}개 · 규칙 ${profile.rules.length}개`;
+    subtitle.textContent = `${profile.enabled ? "프로필 사용 중" : "프로필 꺼짐"} · 매처 ${profileMatchersLabel(profile)} · 카드 ${groupRulesByCard(profile.rules, profile.cards).length}개 · 규칙 ${profile.rules.length}개${profile.sourceTemplateSlug ? ` · 템플릿 ${profile.sourceTemplateSlug}` : ""}`;
 
     const priorityBadge = document.createElement("div");
     priorityBadge.className = "options__priority-badge";
@@ -266,6 +470,33 @@ async function render(): Promise<void> {
       })();
     });
 
+    const saveTemplateButton = document.createElement("button");
+    saveTemplateButton.type = "button";
+    saveTemplateButton.textContent = profile.sourceTemplateSlug ? "템플릿 갱신" : "템플릿 등록";
+    saveTemplateButton.className = "options__secondary";
+    saveTemplateButton.addEventListener("click", () => {
+      void (async () => {
+        const serverUrl = templateServerUrlElement.value.trim() || DEFAULT_TEMPLATE_SERVER_URL;
+        const slug = profile.sourceTemplateSlug ?? slugFromProfileName(profile.name);
+        const name = profile.name;
+
+        await fetchJson<{ ok: boolean; template: RemoteTemplate }>(serverUrl, "/templates", {
+          body: JSON.stringify(profileToTemplate(profile, slug, name)),
+          headers: {
+            "content-type": "application/json"
+          },
+          method: profile.sourceTemplateSlug ? "PUT" : "POST"
+        });
+
+        templateStatusElement.textContent = profile.sourceTemplateSlug
+          ? `${name} 템플릿을 갱신했습니다.`
+          : `${name} 템플릿을 등록했습니다.`;
+        await renderTemplates();
+      })().catch((error: unknown) => {
+        templateStatusElement.textContent = error instanceof Error ? error.message : "템플릿 저장에 실패했습니다.";
+      });
+    });
+
     const saveProfileButton = document.createElement("button");
     saveProfileButton.type = "button";
     saveProfileButton.textContent = "프로필 저장";
@@ -288,7 +519,7 @@ async function render(): Promise<void> {
       })();
     });
 
-    actions.append(moveUpButton, moveDownButton, toggleProfileButton, clearProfileButton, saveProfileButton, deleteProfileButton);
+    actions.append(moveUpButton, moveDownButton, toggleProfileButton, clearProfileButton, saveTemplateButton, saveProfileButton, deleteProfileButton);
     headingWrap.append(title, subtitle, priorityBadge);
     header.append(headingWrap, actions);
     editWrap.append(nameInput, matcherEditor, matcherHint);
@@ -446,6 +677,7 @@ async function render(): Promise<void> {
 
 refreshButtonElement.addEventListener("click", () => {
   void render();
+  void renderTemplates();
 });
 
 toggleGlobalButtonElement.addEventListener("click", () => {
@@ -483,6 +715,13 @@ urlTestInputElement.addEventListener("input", () => {
   void render();
 });
 
+refreshTemplatesButtonElement.addEventListener("click", () => {
+  void (async () => {
+    await writeTemplateServerUrl(templateServerUrlElement.value);
+    await renderTemplates();
+  })();
+});
+
 searchInputElement.addEventListener("input", () => {
   void render();
 });
@@ -492,11 +731,16 @@ scopeFilterElement.addEventListener("change", () => {
 });
 
 chrome.storage.onChanged.addListener((changes, areaName) => {
-  if (areaName !== "local" || !(STORAGE_KEY in changes)) {
+  if (areaName !== "local" || (!(STORAGE_KEY in changes) && !(TEMPLATE_SERVER_URL_KEY in changes))) {
     return;
   }
 
   void render();
+  void renderTemplates();
 });
 
-void render();
+void (async () => {
+  templateServerUrlElement.value = await readTemplateServerUrl();
+  await render();
+  await renderTemplates();
+})();

@@ -10,6 +10,7 @@
     "pipe:doctor": "node ./scripts/doctor.mjs",
     "pipe:build": "npm run pipe:clean && tsc -p tsconfig.json && node ./scripts/build.mjs",
     "pipe:dev": "npm run pipe:build && node ./scripts/dev.mjs",
+    "pipe:templates": "node ./scripts/templates-server.mjs",
     "pipe:watch": "node ./scripts/watch.mjs",
     "pipe:rebuild": "npm run pipe:clean-all && npm run pipe:build && npm run pipe:doctor",
     "pipe:package": "npm run pipe:build && node ./scripts/package.mjs",

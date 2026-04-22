@@ -11,6 +11,9 @@ case "$cmd" in
   doctor)
     npm run pipe:doctor -- "$@"
     ;;
+  templates|tpl)
+    npm run pipe:templates -- "$@"
+    ;;
   build|b)
     npm run pipe:build -- "$@"
     ;;
@@ -53,6 +56,7 @@ case "$cmd" in
   ./infocutter check
   ./infocutter watch
   ./infocutter doctor
+  ./infocutter templates
 
 개별 확인
   ./infocutter lint
@@ -70,6 +74,7 @@ case "$cmd" in
   ./infocutter c
   ./infocutter w
   ./infocutter pkg
+  ./infocutter tpl
 
 기존 커맨드
   ./infocutter dev
