@@ -1,0 +1,80 @@
+:root {
+  color-scheme: light;
+  font-family: "SF Mono", "IBM Plex Mono", ui-monospace, monospace;
+  background: linear-gradient(180deg, #f7f4eb 0%, #efe8da 100%);
+  color: #231f17;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+}
+
+.popup {
+  padding: 16px;
+}
+
+.popup__header {
+  margin-bottom: 16px;
+}
+
+.popup__eyebrow {
+  margin: 0 0 6px;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #7a6d59;
+}
+
+.popup__title {
+  margin: 0;
+  font-size: 24px;
+}
+
+.popup__panel {
+  padding: 12px;
+  border: 1px solid #c7baa4;
+  background: rgba(255, 255, 255, 0.7);
+}
+
+.popup__site,
+.popup__meta,
+.popup__status {
+  margin: 0;
+}
+
+.popup__meta,
+.popup__status {
+  margin-top: 8px;
+  font-size: 13px;
+  color: #5b4e3f;
+}
+
+.popup__actions {
+  display: grid;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+button {
+  border: 1px solid #231f17;
+  background: #231f17;
+  color: #f7f4eb;
+  padding: 10px 12px;
+  font: inherit;
+  cursor: pointer;
+}
+
+button:hover {
+  opacity: 0.92;
+}
+
+.popup__secondary {
+  background: transparent;
+  color: #231f17;
+}
+
+.popup__danger {
+  border-color: #8f2d1d;
+  background: #8f2d1d;
+}
