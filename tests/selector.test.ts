@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { selectorCss } from "../src/shared/selector.js";
-import { groupRulesByCard, normalizeStore, readStore, removeRuleFromProfile, setCardEnabled } from "../src/shared/storage.js";
+import { groupRulesByCard, matchesUrl, normalizeStore, readStore, removeRuleFromProfile, setCardEnabled } from "../src/shared/storage.js";
 
 void test("selectorCss emits display none rules", () => {
   const css = selectorCss([".target", "#banner"]);
@@ -124,6 +124,11 @@ void test("groupRulesByCard builds first-class card summaries", () => {
   assert.ok(secondCard);
   assert.equal(secondCard.cardId, "card-b");
   assert.equal(secondCard.ruleCount, 1);
+});
+
+void test("matchesUrl respects non-default ports in origin-based matchers", () => {
+  assert.equal(matchesUrl("http://127.0.0.1:41771/*", "http://127.0.0.1:41771/"), true);
+  assert.equal(matchesUrl("http://127.0.0.1:41771/*", "http://127.0.0.1:41772/"), false);
 });
 
 void test("removeRuleFromProfile removes only the targeted card rule", async () => {
