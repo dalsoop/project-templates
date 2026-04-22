@@ -1,9 +1,12 @@
 import { STORAGE_KEY, STORAGE_VERSION } from "./constants.js";
-import type { ActiveSiteState, RuleStore, SiteRuleSet, StoredRule } from "./types.js";
+import type { ActiveSiteState, RuleProfile, RuleStore, StoredRule } from "./types.js";
 
-function emptySiteRuleSet(): SiteRuleSet {
+function emptyProfile(): RuleProfile {
   return {
     enabled: true,
+    id: crypto.randomUUID(),
+    matchers: [],
+    name: "새 프로필",
     rules: [],
     updatedAt: new Date(0).toISOString()
   };
@@ -15,60 +18,98 @@ function emptyStore(): RuleStore {
     settings: {
       globalEnabled: true
     },
-    sites: {}
+    profiles: []
   };
 }
 
-function normalizeSiteRuleSet(rawSiteRules: unknown): SiteRuleSet {
-  const partialSiteRules =
-    rawSiteRules && typeof rawSiteRules === "object"
-      ? rawSiteRules
-      : {};
+function profileNameFromMatcher(matcher: string): string {
+  return matcher.replace(/^\*?:?\/\//, "").replace(/\/\*$/, "");
+}
 
-  const enabledValue: unknown = Reflect.get(partialSiteRules, "enabled");
-  const rulesValue: unknown = Reflect.get(partialSiteRules, "rules");
-  const selectorsValue: unknown = Reflect.get(partialSiteRules, "selectors");
-  const updatedAtValue: unknown = Reflect.get(partialSiteRules, "updatedAt");
+function hostnameMatcher(url: string): string {
+  const parsed = new URL(url);
+  return `${parsed.protocol}//${parsed.hostname}/*`;
+}
+
+function normalizeRule(rule: unknown): StoredRule | null {
+  if (typeof rule === "string") {
+    return {
+      createdAt: new Date(0).toISOString(),
+      frameScope: null,
+      selector: rule
+    };
+  }
+
+  if (!rule || typeof rule !== "object") {
+    return null;
+  }
+
+  const candidate = rule as Partial<StoredRule>;
+  if (typeof candidate.selector !== "string") {
+    return null;
+  }
+
+  return {
+    createdAt: typeof candidate.createdAt === "string" ? candidate.createdAt : new Date(0).toISOString(),
+    frameScope: typeof candidate.frameScope === "string" ? candidate.frameScope : null,
+    selector: candidate.selector
+  };
+}
+
+function normalizeProfile(rawProfile: unknown): RuleProfile | null {
+  if (!rawProfile || typeof rawProfile !== "object") {
+    return null;
+  }
+
+  const enabledValue: unknown = Reflect.get(rawProfile, "enabled");
+  const idValue: unknown = Reflect.get(rawProfile, "id");
+  const matchersValue: unknown = Reflect.get(rawProfile, "matchers");
+  const nameValue: unknown = Reflect.get(rawProfile, "name");
+  const rulesValue: unknown = Reflect.get(rawProfile, "rules");
+  const updatedAtValue: unknown = Reflect.get(rawProfile, "updatedAt");
+
+  const rules = Array.isArray(rulesValue)
+    ? rulesValue.map(normalizeRule).filter((rule): rule is StoredRule => rule !== null)
+    : [];
+
+  const matchers = Array.isArray(matchersValue)
+    ? matchersValue.filter((matcher): matcher is string => typeof matcher === "string" && matcher.length > 0)
+    : [];
+
+  return {
+    enabled: typeof enabledValue === "boolean" ? enabledValue : true,
+    id: typeof idValue === "string" && idValue.length > 0 ? idValue : crypto.randomUUID(),
+    matchers,
+    name: typeof nameValue === "string" && nameValue.length > 0
+      ? nameValue
+      : matchers[0]
+        ? profileNameFromMatcher(matchers[0])
+        : "이름 없는 프로필",
+    rules,
+    updatedAt: typeof updatedAtValue === "string" ? updatedAtValue : new Date(0).toISOString()
+  };
+}
+
+function normalizeLegacySiteRules(hostname: string, rawSiteRules: unknown): RuleProfile {
+  const enabledValue: unknown = rawSiteRules && typeof rawSiteRules === "object" ? Reflect.get(rawSiteRules, "enabled") : undefined;
+  const rulesValue: unknown = rawSiteRules && typeof rawSiteRules === "object" ? Reflect.get(rawSiteRules, "rules") : undefined;
+  const selectorsValue: unknown = rawSiteRules && typeof rawSiteRules === "object" ? Reflect.get(rawSiteRules, "selectors") : undefined;
+  const updatedAtValue: unknown = rawSiteRules && typeof rawSiteRules === "object" ? Reflect.get(rawSiteRules, "updatedAt") : undefined;
 
   const rawRules: unknown[] = Array.isArray(rulesValue)
     ? rulesValue
     : Array.isArray(selectorsValue)
-      ? selectorsValue.map((selector: unknown) => ({
-        createdAt: new Date(0).toISOString(),
-        frameScope: null,
-        selector
-      }))
+      ? selectorsValue
       : [];
 
-  const rules = rawRules
-    .map((rule): StoredRule | null => {
-      if (typeof rule === "string") {
-        return {
-          createdAt: new Date(0).toISOString(),
-          frameScope: null,
-          selector: rule
-        };
-      }
-
-      if (!rule || typeof rule !== "object") {
-        return null;
-      }
-
-      const candidate = rule as Partial<StoredRule>;
-      if (typeof candidate.selector !== "string") {
-        return null;
-      }
-
-      return {
-        createdAt: typeof candidate.createdAt === "string" ? candidate.createdAt : new Date(0).toISOString(),
-        frameScope: typeof candidate.frameScope === "string" ? candidate.frameScope : null,
-        selector: candidate.selector
-      };
-    })
-    .filter((rule): rule is StoredRule => rule !== null);
+  const rules = rawRules.map(normalizeRule).filter((rule): rule is StoredRule => rule !== null);
+  const matcher = `https://${hostname}/*`;
 
   return {
     enabled: typeof enabledValue === "boolean" ? enabledValue : true,
+    id: crypto.randomUUID(),
+    matchers: [matcher],
+    name: hostname,
     rules,
     updatedAt: typeof updatedAtValue === "string" ? updatedAtValue : new Date(0).toISOString()
   };
@@ -78,54 +119,69 @@ export function hostnameFromUrl(url: string): string {
   return new URL(url).hostname.toLowerCase();
 }
 
+export function matcherToRegExp(matcher: string): RegExp {
+  const escaped = matcher.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*");
+  return new RegExp(`^${escaped}$`);
+}
+
+export function matchesUrl(matcher: string, url: string): boolean {
+  return matcherToRegExp(matcher).test(url);
+}
+
+export function findMatchingProfile(store: RuleStore, url: string): RuleProfile | null {
+  return store.profiles.find((profile) => profile.matchers.some((matcher) => matchesUrl(matcher, url))) ?? null;
+}
+
 export function normalizeStore(candidate: unknown): RuleStore {
   if (!candidate || typeof candidate !== "object") {
     return emptyStore();
   }
 
-  const partialStore = candidate as {
-    settings?: unknown;
-    sites?: unknown;
-    version?: number;
-  };
+  const versionValue: unknown = Reflect.get(candidate, "version");
+  const settingsValue: unknown = Reflect.get(candidate, "settings");
+  const profilesValue: unknown = Reflect.get(candidate, "profiles");
+  const sitesValue: unknown = Reflect.get(candidate, "sites");
 
-  const rawSites =
-    partialStore.sites && typeof partialStore.sites === "object"
-      ? partialStore.sites
-      : {};
+  const globalEnabled =
+    settingsValue &&
+    typeof settingsValue === "object" &&
+    "globalEnabled" in settingsValue &&
+    typeof settingsValue.globalEnabled === "boolean"
+      ? settingsValue.globalEnabled
+      : true;
 
-  const sites: Record<string, SiteRuleSet> = {};
-  for (const [hostname, rawSiteRules] of Object.entries(rawSites)) {
-    sites[hostname] = normalizeSiteRuleSet(rawSiteRules);
-  }
+  if (versionValue === 3) {
+    const profiles = Array.isArray(profilesValue)
+      ? profilesValue.map(normalizeProfile).filter((profile): profile is RuleProfile => profile !== null)
+      : [];
 
-  if (partialStore.version === 1) {
     return {
       version: STORAGE_VERSION,
       settings: {
-        globalEnabled: true
+        globalEnabled
       },
-      sites
+      profiles
     };
   }
 
-  if (partialStore.version !== STORAGE_VERSION) {
-    return emptyStore();
+  if (versionValue === 2 || versionValue === 1) {
+    const rawSites =
+      sitesValue && typeof sitesValue === "object"
+        ? (sitesValue as Record<string, unknown>)
+        : {};
+
+    const profiles = Object.entries(rawSites).map(([hostname, rawSiteRules]) => normalizeLegacySiteRules(hostname, rawSiteRules));
+
+    return {
+      version: STORAGE_VERSION,
+      settings: {
+        globalEnabled
+      },
+      profiles
+    };
   }
 
-  return {
-    version: STORAGE_VERSION,
-    settings: {
-      globalEnabled:
-        partialStore.settings &&
-        typeof partialStore.settings === "object" &&
-        "globalEnabled" in partialStore.settings &&
-        typeof partialStore.settings.globalEnabled === "boolean"
-          ? partialStore.settings.globalEnabled
-          : true
-    },
-    sites
-  };
+  return emptyStore();
 }
 
 export async function readStore(): Promise<RuleStore> {
@@ -140,72 +196,103 @@ export async function writeStore(store: RuleStore): Promise<void> {
   });
 }
 
-export async function readSiteRules(hostname: string): Promise<SiteRuleSet> {
+export async function ensureProfileForUrl(url: string): Promise<RuleProfile> {
   const store = await readStore();
-  return store.sites[hostname] ?? emptySiteRuleSet();
+  const existing = findMatchingProfile(store, url);
+  if (existing) {
+    return existing;
+  }
+
+  const matcher = hostnameMatcher(url);
+  const profile: RuleProfile = {
+    ...emptyProfile(),
+    matchers: [matcher],
+    name: hostnameFromUrl(url),
+    updatedAt: new Date().toISOString()
+  };
+
+  store.profiles.push(profile);
+  await writeStore(store);
+  return profile;
 }
 
-export async function addSiteRule(hostname: string, selector: string, frameScope: string | null): Promise<SiteRuleSet> {
+export async function addRuleToUrl(url: string, selector: string, frameScope: string | null): Promise<RuleProfile> {
   const store = await readStore();
-  const current = store.sites[hostname] ?? emptySiteRuleSet();
+  const current = findMatchingProfile(store, url) ?? (await ensureProfileForUrl(url));
+  const refreshedStore = await readStore();
+  const profile = refreshedStore.profiles.find((item) => item.id === current.id) ?? current;
   const nextRule: StoredRule = {
     createdAt: new Date().toISOString(),
     frameScope,
     selector
   };
-  const next: SiteRuleSet = {
+
+  const nextProfile: RuleProfile = {
+    ...profile,
     enabled: true,
-    rules: current.rules.some((rule) => rule.selector === selector && rule.frameScope === frameScope)
-      ? current.rules
-      : [...current.rules, nextRule],
+    rules: profile.rules.some((rule) => rule.selector === selector && rule.frameScope === frameScope)
+      ? profile.rules
+      : [...profile.rules, nextRule],
     updatedAt: new Date().toISOString()
   };
 
-  store.sites[hostname] = next;
-  await writeStore(store);
-  return next;
+  refreshedStore.profiles = refreshedStore.profiles.map((item) => (item.id === profile.id ? nextProfile : item));
+  await writeStore(refreshedStore);
+  return nextProfile;
 }
 
-export async function removeSiteRule(hostname: string, selector: string, frameScope: string | null): Promise<SiteRuleSet> {
+export async function removeRuleFromProfile(profileId: string, selector: string, frameScope: string | null): Promise<RuleProfile | null> {
   const store = await readStore();
-  const current = store.sites[hostname] ?? emptySiteRuleSet();
-  const next: SiteRuleSet = {
-    ...current,
-    rules: current.rules.filter((rule) => !(rule.selector === selector && rule.frameScope === frameScope)),
+  const profile = store.profiles.find((item) => item.id === profileId);
+  if (!profile) {
+    return null;
+  }
+
+  const nextProfile: RuleProfile = {
+    ...profile,
+    rules: profile.rules.filter((rule) => !(rule.selector === selector && rule.frameScope === frameScope)),
     updatedAt: new Date().toISOString()
   };
 
-  store.sites[hostname] = next;
+  store.profiles = store.profiles.map((item) => (item.id === profile.id ? nextProfile : item));
   await writeStore(store);
-  return next;
+  return nextProfile;
 }
 
-export async function clearSiteRules(hostname: string): Promise<SiteRuleSet> {
+export async function clearProfileRules(profileId: string): Promise<RuleProfile | null> {
   const store = await readStore();
-  const current = store.sites[hostname] ?? emptySiteRuleSet();
-  const next: SiteRuleSet = {
-    ...current,
+  const profile = store.profiles.find((item) => item.id === profileId);
+  if (!profile) {
+    return null;
+  }
+
+  const nextProfile: RuleProfile = {
+    ...profile,
     rules: [],
     updatedAt: new Date().toISOString()
   };
 
-  store.sites[hostname] = next;
+  store.profiles = store.profiles.map((item) => (item.id === profile.id ? nextProfile : item));
   await writeStore(store);
-  return next;
+  return nextProfile;
 }
 
-export async function setSiteEnabled(hostname: string, enabled: boolean): Promise<SiteRuleSet> {
+export async function setProfileEnabled(profileId: string, enabled: boolean): Promise<RuleProfile | null> {
   const store = await readStore();
-  const current = store.sites[hostname] ?? emptySiteRuleSet();
-  const next: SiteRuleSet = {
-    ...current,
+  const profile = store.profiles.find((item) => item.id === profileId);
+  if (!profile) {
+    return null;
+  }
+
+  const nextProfile: RuleProfile = {
+    ...profile,
     enabled,
     updatedAt: new Date().toISOString()
   };
 
-  store.sites[hostname] = next;
+  store.profiles = store.profiles.map((item) => (item.id === profile.id ? nextProfile : item));
   await writeStore(store);
-  return next;
+  return nextProfile;
 }
 
 export async function setGlobalEnabled(globalEnabled: boolean): Promise<RuleStore> {
@@ -223,15 +310,18 @@ export async function setGlobalEnabled(globalEnabled: boolean): Promise<RuleStor
 
 export async function readActiveSiteState(url: string): Promise<ActiveSiteState> {
   const store = await readStore();
-  const hostname = hostnameFromUrl(url);
-  const siteRules = store.sites[hostname] ?? emptySiteRuleSet();
+  const profile = findMatchingProfile(store, url);
 
   return {
+    activeProfileId: profile?.id ?? null,
+    activeProfileName: profile?.name ?? null,
     globalEnabled: store.settings.globalEnabled,
-    hostname,
-    rules: [...siteRules.rules],
-    selectorCount: siteRules.rules.length,
-    siteEnabled: siteRules.enabled,
-    updatedAt: siteRules.updatedAt
+    hostname: hostnameFromUrl(url),
+    matchers: profile?.matchers ?? [],
+    profileEnabled: profile?.enabled ?? true,
+    rules: profile?.rules ? [...profile.rules] : [],
+    selectorCount: profile?.rules.length ?? 0,
+    updatedAt: profile?.updatedAt ?? new Date(0).toISOString(),
+    url
   };
 }

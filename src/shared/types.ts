@@ -4,25 +4,32 @@ export type StoredRule = {
   selector: string;
 };
 
-export type SiteRuleSet = {
+export type RuleProfile = {
   enabled: boolean;
+  id: string;
+  matchers: string[];
+  name: string;
   rules: StoredRule[];
   updatedAt: string;
 };
 
 export type RuleStore = {
-  version: 2;
+  version: 3;
   settings: {
     globalEnabled: boolean;
   };
-  sites: Record<string, SiteRuleSet>;
+  profiles: RuleProfile[];
 };
 
 export type ActiveSiteState = {
+  activeProfileId: string | null;
+  activeProfileName: string | null;
   globalEnabled: boolean;
   hostname: string;
+  matchers: string[];
+  profileEnabled: boolean;
   rules: StoredRule[];
   selectorCount: number;
-  siteEnabled: boolean;
   updatedAt: string;
+  url: string;
 };

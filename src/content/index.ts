@@ -1,6 +1,6 @@
 (() => {
 const STORAGE_KEY = "infocutter.ruleStore";
-const STORAGE_VERSION = 2;
+const STORAGE_VERSION = 3;
 const STYLE_ELEMENT_ID = "infocutter-style-rules";
 const PICKER_OVERLAY_ID = "infocutter-picker-overlay";
 const PICKER_PREVIEW_STYLE_ID = "infocutter-preview-style";
@@ -27,6 +27,9 @@ if (!infocutterGlobal.__INFOCUTTER_CONTENT_LOADED__) {
 infocutterGlobal.__INFOCUTTER_CONTENT_LOADED__ = true;
 
 type SiteRuleSet = {
+  id: string;
+  matchers: string[];
+  name: string;
   enabled: boolean;
   rules: {
     createdAt: string;
@@ -37,24 +40,28 @@ type SiteRuleSet = {
 };
 
 type RuleStore = {
-  version: 2;
+  version: 3;
   settings: {
     globalEnabled: boolean;
   };
-  sites: Record<string, SiteRuleSet>;
+  profiles: SiteRuleSet[];
 };
 
 type ActiveSiteState = {
+  activeProfileId: string | null;
+  activeProfileName: string | null;
   globalEnabled: boolean;
   hostname: string;
+  matchers: string[];
+  profileEnabled: boolean;
   rules: {
     createdAt: string;
     frameScope: string | null;
     selector: string;
   }[];
   selectorCount: number;
-  siteEnabled: boolean;
   updatedAt: string;
+  url: string;
 };
 
 let pickerStop: (() => void) | null = null;
@@ -62,6 +69,9 @@ let lastContextTarget: Element | null = null;
 
 function emptySiteRuleSet(): SiteRuleSet {
   return {
+    id: crypto.randomUUID(),
+    matchers: [],
+    name: "새 프로필",
     enabled: true,
     rules: [],
     updatedAt: new Date(0).toISOString()
@@ -74,12 +84,26 @@ function emptyStore(): RuleStore {
     settings: {
       globalEnabled: true
     },
-    sites: {}
+    profiles: []
   };
 }
 
 function hostnameFromUrl(url: string): string {
   return new URL(url).hostname.toLowerCase();
+}
+
+function hostnameMatcher(url: string): string {
+  const parsed = new URL(url);
+  return `${parsed.protocol}//${parsed.hostname}/*`;
+}
+
+function matcherToRegExp(matcher: string): RegExp {
+  const escaped = matcher.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*");
+  return new RegExp(`^${escaped}$`);
+}
+
+function matchesUrl(matcher: string, url: string): boolean {
+  return matcherToRegExp(matcher).test(url);
 }
 
 function ownerPageUrl(): string {
@@ -119,6 +143,9 @@ function normalizeSiteRuleSet(rawSiteRules: unknown): SiteRuleSet {
       : {};
 
   const enabledValue: unknown = Reflect.get(partialSiteRules, "enabled");
+  const idValue: unknown = Reflect.get(partialSiteRules, "id");
+  const matchersValue: unknown = Reflect.get(partialSiteRules, "matchers");
+  const nameValue: unknown = Reflect.get(partialSiteRules, "name");
   const rulesValue: unknown = Reflect.get(partialSiteRules, "rules");
   const selectorsValue: unknown = Reflect.get(partialSiteRules, "selectors");
   const updatedAtValue: unknown = Reflect.get(partialSiteRules, "updatedAt");
@@ -166,6 +193,11 @@ function normalizeSiteRuleSet(rawSiteRules: unknown): SiteRuleSet {
     .filter((rule): rule is SiteRuleSet["rules"][number] => rule !== null);
 
   return {
+    id: typeof idValue === "string" && idValue.length > 0 ? idValue : crypto.randomUUID(),
+    matchers: Array.isArray(matchersValue)
+      ? matchersValue.filter((matcher): matcher is string => typeof matcher === "string" && matcher.length > 0)
+      : [],
+    name: typeof nameValue === "string" && nameValue.length > 0 ? nameValue : "이름 없는 프로필",
     enabled: typeof enabledValue === "boolean" ? enabledValue : true,
     rules,
     updatedAt: typeof updatedAtValue === "string" ? updatedAtValue : new Date(0).toISOString()
@@ -178,32 +210,49 @@ function normalizeStore(candidate: unknown): RuleStore {
   }
 
   const partialStore = candidate as {
+    profiles?: unknown;
     settings?: unknown;
     sites?: unknown;
     version?: number;
   };
+  const profilesValue: unknown = Reflect.get(partialStore, "profiles");
 
   const rawSites =
     partialStore.sites && typeof partialStore.sites === "object"
       ? partialStore.sites
       : {};
 
-  const sites: Record<string, SiteRuleSet> = {};
-  for (const [hostname, rawSiteRules] of Object.entries(rawSites)) {
-    sites[hostname] = normalizeSiteRuleSet(rawSiteRules);
-  }
+  const profiles = Array.isArray(profilesValue)
+    ? profilesValue.map((profile) => normalizeSiteRuleSet(profile))
+    : [];
 
-  if (partialStore.version === 1) {
+  if (partialStore.version === 3) {
     return {
       version: STORAGE_VERSION,
       settings: {
-        globalEnabled: true
+        globalEnabled:
+          partialStore.settings &&
+          typeof partialStore.settings === "object" &&
+          "globalEnabled" in partialStore.settings &&
+          typeof partialStore.settings.globalEnabled === "boolean"
+            ? partialStore.settings.globalEnabled
+            : true
       },
-      sites
+      profiles
     };
   }
 
-  if (partialStore.version !== STORAGE_VERSION) {
+  const migratedProfiles: SiteRuleSet[] = [];
+  for (const [hostname, rawSiteRules] of Object.entries(rawSites)) {
+    const normalized = normalizeSiteRuleSet(rawSiteRules);
+    migratedProfiles.push({
+      ...normalized,
+      matchers: [hostnameMatcher(`https://${hostname}/`)],
+      name: hostname
+    });
+  }
+
+  if (partialStore.version !== 1 && partialStore.version !== 2) {
     return emptyStore();
   }
 
@@ -218,7 +267,7 @@ function normalizeStore(candidate: unknown): RuleStore {
           ? partialStore.settings.globalEnabled
           : true
     },
-    sites
+    profiles: migratedProfiles
   };
 }
 
@@ -234,65 +283,100 @@ async function writeStore(store: RuleStore): Promise<void> {
   });
 }
 
-async function addSiteRule(hostname: string, selector: string, frameScope: string | null): Promise<SiteRuleSet> {
+function findMatchingProfile(store: RuleStore, url: string): SiteRuleSet | null {
+  return store.profiles.find((profile) => profile.matchers.some((matcher) => matchesUrl(matcher, url))) ?? null;
+}
+
+async function ensureProfileForUrl(url: string): Promise<SiteRuleSet> {
   const store = await readStore();
-  const current = store.sites[hostname] ?? emptySiteRuleSet();
+  const existing = findMatchingProfile(store, url);
+  if (existing) {
+    return existing;
+  }
+
+  const profile: SiteRuleSet = {
+    ...emptySiteRuleSet(),
+    matchers: [hostnameMatcher(url)],
+    name: hostnameFromUrl(url),
+    updatedAt: new Date().toISOString()
+  };
+
+  store.profiles.push(profile);
+  await writeStore(store);
+  return profile;
+}
+
+async function addSiteRule(url: string, selector: string, frameScope: string | null): Promise<SiteRuleSet> {
+  const store = await readStore();
+  const current = findMatchingProfile(store, url) ?? (await ensureProfileForUrl(url));
+  const refreshedStore = await readStore();
+  const profile = refreshedStore.profiles.find((item) => item.id === current.id) ?? current;
   const nextRule = {
     createdAt: new Date().toISOString(),
     frameScope,
     selector
   };
   const next: SiteRuleSet = {
+    ...profile,
     enabled: true,
-    rules: current.rules.some((rule) => rule.selector === selector && rule.frameScope === frameScope)
-      ? current.rules
-      : [...current.rules, nextRule],
+    rules: profile.rules.some((rule) => rule.selector === selector && rule.frameScope === frameScope)
+      ? profile.rules
+      : [...profile.rules, nextRule],
     updatedAt: new Date().toISOString()
   };
 
-  store.sites[hostname] = next;
-  await writeStore(store);
+  refreshedStore.profiles = refreshedStore.profiles.map((item) => (item.id === profile.id ? next : item));
+  await writeStore(refreshedStore);
   return next;
 }
 
-async function removeSiteRule(hostname: string, selector: string, frameScope: string | null): Promise<SiteRuleSet> {
+async function removeSiteRule(profileId: string, selector: string, frameScope: string | null): Promise<SiteRuleSet | null> {
   const store = await readStore();
-  const current = store.sites[hostname] ?? emptySiteRuleSet();
+  const current = store.profiles.find((item) => item.id === profileId);
+  if (!current) {
+    return null;
+  }
   const next: SiteRuleSet = {
     ...current,
     rules: current.rules.filter((rule) => !(rule.selector === selector && rule.frameScope === frameScope)),
     updatedAt: new Date().toISOString()
   };
 
-  store.sites[hostname] = next;
+  store.profiles = store.profiles.map((item) => (item.id === profileId ? next : item));
   await writeStore(store);
   return next;
 }
 
-async function clearSiteRules(hostname: string): Promise<SiteRuleSet> {
+async function clearSiteRules(profileId: string): Promise<SiteRuleSet | null> {
   const store = await readStore();
-  const current = store.sites[hostname] ?? emptySiteRuleSet();
+  const current = store.profiles.find((item) => item.id === profileId);
+  if (!current) {
+    return null;
+  }
   const next: SiteRuleSet = {
     ...current,
     rules: [],
     updatedAt: new Date().toISOString()
   };
 
-  store.sites[hostname] = next;
+  store.profiles = store.profiles.map((item) => (item.id === profileId ? next : item));
   await writeStore(store);
   return next;
 }
 
-async function setSiteEnabled(hostname: string, enabled: boolean): Promise<SiteRuleSet> {
+async function setSiteEnabled(profileId: string, enabled: boolean): Promise<SiteRuleSet | null> {
   const store = await readStore();
-  const current = store.sites[hostname] ?? emptySiteRuleSet();
+  const current = store.profiles.find((item) => item.id === profileId);
+  if (!current) {
+    return null;
+  }
   const next: SiteRuleSet = {
     ...current,
     enabled,
     updatedAt: new Date().toISOString()
   };
 
-  store.sites[hostname] = next;
+  store.profiles = store.profiles.map((item) => (item.id === profileId ? next : item));
   await writeStore(store);
   return next;
 }
@@ -312,16 +396,19 @@ async function setGlobalEnabled(globalEnabled: boolean): Promise<RuleStore> {
 
 async function readActiveSiteState(url: string): Promise<ActiveSiteState> {
   const store = await readStore();
-  const hostname = hostnameFromUrl(url);
-  const siteRules = store.sites[hostname] ?? emptySiteRuleSet();
+  const profile = findMatchingProfile(store, url);
 
   return {
+    activeProfileId: profile?.id ?? null,
+    activeProfileName: profile?.name ?? null,
     globalEnabled: store.settings.globalEnabled,
-    hostname,
-    rules: [...siteRules.rules],
-    selectorCount: siteRules.rules.length,
-    siteEnabled: siteRules.enabled,
-    updatedAt: siteRules.updatedAt
+    hostname: hostnameFromUrl(url),
+    matchers: profile?.matchers ?? [],
+    profileEnabled: profile?.enabled ?? true,
+    rules: profile?.rules ? [...profile.rules] : [],
+    selectorCount: profile?.rules.length ?? 0,
+    updatedAt: profile?.updatedAt ?? new Date(0).toISOString(),
+    url
   };
 }
 
@@ -486,7 +573,7 @@ async function renderRules(): Promise<void> {
   const style = ensureStyleElement();
   const frameScope = currentFrameScope();
 
-  if (!activeSiteState.globalEnabled || !activeSiteState.siteEnabled) {
+  if (!activeSiteState.globalEnabled || !activeSiteState.profileEnabled) {
     style.textContent = "";
     return;
   }
@@ -863,7 +950,7 @@ function startPicker(): void {
         document.querySelectorAll(selector).length,
         () => {
           void (async () => {
-            await addSiteRule(hostnameFromUrl(ownerPageUrl()), selector, currentFrameScope());
+            await addSiteRule(ownerPageUrl(), selector, currentFrameScope());
             await renderRules();
             stopPicker();
           })();
@@ -888,7 +975,7 @@ function startPicker(): void {
 
 async function hideTargetElement(target: Element): Promise<string> {
   const selector = buildSelector(target);
-  await addSiteRule(hostnameFromUrl(ownerPageUrl()), selector, currentFrameScope());
+  await addSiteRule(ownerPageUrl(), selector, currentFrameScope());
   await renderRules();
   return selector;
 }
@@ -981,7 +1068,13 @@ chrome.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) =
     }
 
     if (type === messageTypes.clearSiteRules) {
-      await clearSiteRules(hostnameFromUrl(ownerPageUrl()));
+      const currentState = await readActiveSiteState(ownerPageUrl());
+      if (!currentState.activeProfileId) {
+        sendResponse({ ok: false });
+        return;
+      }
+
+      await clearSiteRules(currentState.activeProfileId);
       await renderRules();
       sendResponse({
         ok: true,
@@ -996,12 +1089,21 @@ chrome.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) =
         "frameScope" in message && typeof message.frameScope === "string"
           ? message.frameScope
           : null;
+      const profileId =
+        "profileId" in message && typeof message.profileId === "string"
+          ? message.profileId
+          : null;
       if (!selector) {
         sendResponse({ ok: false });
         return;
       }
 
-      await removeSiteRule(hostnameFromUrl(ownerPageUrl()), selector, frameScope);
+      if (!profileId) {
+        sendResponse({ ok: false });
+        return;
+      }
+
+      await removeSiteRule(profileId, selector, frameScope);
       await renderRules();
       sendResponse({
         ok: true,
@@ -1012,12 +1114,18 @@ chrome.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) =
 
     if (type === messageTypes.toggleSiteEnabled) {
       const enabled = "enabled" in message && typeof message.enabled === "boolean" ? message.enabled : null;
+      const currentState = await readActiveSiteState(ownerPageUrl());
       if (enabled === null) {
         sendResponse({ ok: false });
         return;
       }
 
-      await setSiteEnabled(hostnameFromUrl(ownerPageUrl()), enabled);
+      if (!currentState.activeProfileId) {
+        sendResponse({ ok: false });
+        return;
+      }
+
+      await setSiteEnabled(currentState.activeProfileId, enabled);
       await renderRules();
       sendResponse({
         ok: true,

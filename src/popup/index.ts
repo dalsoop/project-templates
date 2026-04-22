@@ -45,6 +45,7 @@ type ActiveTab = chrome.tabs.Tab & { id: number };
 type MessagePayload = {
   enabled?: boolean;
   frameScope?: string | null;
+  profileId?: string | null;
   selector?: string;
 };
 
@@ -218,6 +219,7 @@ function buildRuleList(state: ActiveSiteState): void {
       void (async () => {
         const nextState = await mutateContentScript<ActiveSiteState>(messageTypes.removeSiteRule, {
           frameScope: rule.frameScope,
+          profileId: state.activeProfileId,
           selector: rule.selector
         });
         renderState(nextState);
@@ -258,11 +260,13 @@ function buildRuleList(state: ActiveSiteState): void {
 }
 
 function renderState(state: ActiveSiteState): void {
-  siteLabelElement.textContent = state.hostname;
+  siteLabelElement.textContent = state.activeProfileName
+    ? `${state.hostname} · ${state.activeProfileName}`
+    : `${state.hostname} · 기본 프로필`;
   ruleCountElement.textContent = `저장된 선택자 ${state.selectorCount}개`;
-  siteStateElement.textContent = state.siteEnabled ? "이 사이트에서 사용 중" : "이 사이트에서 꺼짐";
+  siteStateElement.textContent = state.profileEnabled ? "현재 프로필 사용 중" : "현재 프로필 꺼짐";
   globalStateElement.textContent = state.globalEnabled ? "확장 기능이 켜져 있음" : "확장 기능이 전체 꺼짐";
-  toggleSiteButtonElement.textContent = state.siteEnabled ? "이 사이트에서 끄기" : "이 사이트에서 켜기";
+  toggleSiteButtonElement.textContent = state.profileEnabled ? "현재 프로필 끄기" : "현재 프로필 켜기";
   toggleGlobalButtonElement.textContent = state.globalEnabled ? "전체 끄기" : "전체 켜기";
   pickButtonElement.disabled = !state.globalEnabled;
   buildRuleList(state);
@@ -315,10 +319,10 @@ toggleSiteButtonElement.addEventListener("click", () => {
   void (async () => {
     const currentState = await askContentScript<ActiveSiteState>(messageTypes.getPageState);
     const nextState = await mutateContentScript<ActiveSiteState>(messageTypes.toggleSiteEnabled, {
-      enabled: !currentState.siteEnabled
+      enabled: !currentState.profileEnabled
     });
     renderState(nextState);
-    statusElement.textContent = nextState.siteEnabled ? "이 사이트에서 다시 켰습니다." : "이 사이트에서 껐습니다.";
+    statusElement.textContent = nextState.profileEnabled ? "현재 프로필을 다시 켰습니다." : "현재 프로필을 껐습니다.";
   })().catch((error: unknown) => {
     statusElement.textContent = error instanceof Error ? error.message : "사이트 상태 변경에 실패했습니다.";
   });

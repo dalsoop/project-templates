@@ -1,5 +1,5 @@
 import { messageTypes } from "../shared/messages.js";
-import { hostnameFromUrl, readSiteRules, readStore } from "../shared/storage.js";
+import { findMatchingProfile, readStore } from "../shared/storage.js";
 
 const contextMenuIds = {
   root: "infocutter-root",
@@ -18,10 +18,9 @@ async function updateBadgeForTab(tabId: number, url?: string): Promise<void> {
   }
 
   const store = await readStore();
-  const hostname = hostnameFromUrl(url);
-  const siteRules = await readSiteRules(hostname);
+  const profile = findMatchingProfile(store, url);
 
-  if (!store.settings.globalEnabled || !siteRules.enabled || siteRules.rules.length === 0) {
+  if (!store.settings.globalEnabled || !profile || !profile.enabled || profile.rules.length === 0) {
     await chrome.action.setBadgeText({ tabId, text: "" });
     return;
   }
@@ -32,7 +31,7 @@ async function updateBadgeForTab(tabId: number, url?: string): Promise<void> {
   });
   await chrome.action.setBadgeText({
     tabId,
-    text: String(Math.min(siteRules.rules.length, 99))
+    text: String(Math.min(profile.rules.length, 99))
   });
 }
 

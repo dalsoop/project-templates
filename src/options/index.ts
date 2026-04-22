@@ -1,4 +1,4 @@
-import type { RuleStore, StoredRule } from "../shared/types.js";
+import type { RuleProfile, RuleStore, StoredRule } from "../shared/types.js";
 import { normalizeStore, writeStore } from "../shared/storage.js";
 
 const STORAGE_KEY = "infocutter.ruleStore";
@@ -47,6 +47,10 @@ function frameScopeLabel(frameScope: string | null): string {
   }
 }
 
+function profileMatchersLabel(profile: RuleProfile): string {
+  return profile.matchers.join(", ");
+}
+
 function matchesScopeFilter(rule: StoredRule, scopeFilterValue: string): boolean {
   if (scopeFilterValue === "main") {
     return rule.frameScope === null;
@@ -59,62 +63,51 @@ function matchesScopeFilter(rule: StoredRule, scopeFilterValue: string): boolean
   return true;
 }
 
-function matchesSearch(rule: StoredRule, hostname: string, keyword: string): boolean {
+function matchesSearch(rule: StoredRule, profile: RuleProfile, keyword: string): boolean {
   if (!keyword) {
     return true;
   }
 
-  return hostname.includes(keyword) || rule.selector.includes(keyword) || (rule.frameScope?.includes(keyword) ?? false);
+  return (
+    profile.name.toLowerCase().includes(keyword) ||
+    profileMatchersLabel(profile).toLowerCase().includes(keyword) ||
+    rule.selector.includes(keyword) ||
+    (rule.frameScope?.includes(keyword) ?? false)
+  );
 }
 
-async function deleteRule(hostname: string, targetRule: StoredRule): Promise<void> {
+async function updateProfile(profileId: string, updater: (profile: RuleProfile) => RuleProfile): Promise<void> {
   const store = await readStore();
-  const siteRules = store.sites[hostname];
-  if (!siteRules) {
-    return;
-  }
+  store.profiles = store.profiles.map((profile) => (
+    profile.id === profileId ? updater(profile) : profile
+  ));
+  await writeStore(store);
+}
 
-  store.sites[hostname] = {
-    ...siteRules,
-    rules: siteRules.rules.filter(
+async function deleteRule(profileId: string, targetRule: StoredRule): Promise<void> {
+  await updateProfile(profileId, (profile) => ({
+    ...profile,
+    rules: profile.rules.filter(
       (rule) => !(rule.selector === targetRule.selector && rule.frameScope === targetRule.frameScope)
     ),
     updatedAt: new Date().toISOString()
-  };
-
-  await writeStore(store);
+  }));
 }
 
-async function clearSite(hostname: string): Promise<void> {
-  const store = await readStore();
-  const siteRules = store.sites[hostname];
-  if (!siteRules) {
-    return;
-  }
-
-  store.sites[hostname] = {
-    ...siteRules,
+async function clearProfile(profileId: string): Promise<void> {
+  await updateProfile(profileId, (profile) => ({
+    ...profile,
     rules: [],
     updatedAt: new Date().toISOString()
-  };
-
-  await writeStore(store);
+  }));
 }
 
-async function toggleSite(hostname: string): Promise<void> {
-  const store = await readStore();
-  const siteRules = store.sites[hostname];
-  if (!siteRules) {
-    return;
-  }
-
-  store.sites[hostname] = {
-    ...siteRules,
-    enabled: !siteRules.enabled,
+async function toggleProfile(profileId: string): Promise<void> {
+  await updateProfile(profileId, (profile) => ({
+    ...profile,
+    enabled: !profile.enabled,
     updatedAt: new Date().toISOString()
-  };
-
-  await writeStore(store);
+  }));
 }
 
 async function render(): Promise<void> {
@@ -125,14 +118,11 @@ async function render(): Promise<void> {
   globalStatusElement.textContent = store.settings.globalEnabled ? "전역 상태: 켜짐" : "전역 상태: 꺼짐";
   toggleGlobalButtonElement.textContent = store.settings.globalEnabled ? "전체 끄기" : "전체 켜기";
 
-  const siteCards: HTMLElement[] = [];
+  const profileCards: HTMLElement[] = [];
   let totalVisibleRules = 0;
 
-  for (const [hostname, siteRules] of Object.entries(store.sites)) {
-    const rules = siteRules.rules.filter(
-      (rule) => matchesScopeFilter(rule, scope) && matchesSearch(rule, hostname.toLowerCase(), keyword)
-    );
-
+  for (const profile of store.profiles) {
+    const rules = profile.rules.filter((rule) => matchesScopeFilter(rule, scope) && matchesSearch(rule, profile, keyword));
     if (rules.length === 0) {
       continue;
     }
@@ -148,37 +138,37 @@ async function render(): Promise<void> {
     const headingWrap = document.createElement("div");
     const title = document.createElement("h2");
     title.className = "options__site-title";
-    title.textContent = hostname;
+    title.textContent = profile.name;
 
     const subtitle = document.createElement("p");
     subtitle.className = "options__site-subtitle";
-    subtitle.textContent = `${siteRules.enabled ? "사이트 사용 중" : "사이트 꺼짐"} · 규칙 ${rules.length}개 표시`;
+    subtitle.textContent = `${profile.enabled ? "프로필 사용 중" : "프로필 꺼짐"} · 매처 ${profileMatchersLabel(profile)} · 규칙 ${rules.length}개 표시`;
 
     const actions = document.createElement("div");
     actions.className = "options__site-actions";
 
-    const toggleSiteButton = document.createElement("button");
-    toggleSiteButton.type = "button";
-    toggleSiteButton.textContent = siteRules.enabled ? "이 사이트 끄기" : "이 사이트 켜기";
-    toggleSiteButton.className = "options__secondary";
-    toggleSiteButton.addEventListener("click", () => {
+    const toggleProfileButton = document.createElement("button");
+    toggleProfileButton.type = "button";
+    toggleProfileButton.textContent = profile.enabled ? "프로필 끄기" : "프로필 켜기";
+    toggleProfileButton.className = "options__secondary";
+    toggleProfileButton.addEventListener("click", () => {
       void (async () => {
-        await toggleSite(hostname);
+        await toggleProfile(profile.id);
         await render();
       })();
     });
 
-    const clearSiteButton = document.createElement("button");
-    clearSiteButton.type = "button";
-    clearSiteButton.textContent = "이 사이트 규칙 삭제";
-    clearSiteButton.addEventListener("click", () => {
+    const clearProfileButton = document.createElement("button");
+    clearProfileButton.type = "button";
+    clearProfileButton.textContent = "프로필 규칙 삭제";
+    clearProfileButton.addEventListener("click", () => {
       void (async () => {
-        await clearSite(hostname);
+        await clearProfile(profile.id);
         await render();
       })();
     });
 
-    actions.append(toggleSiteButton, clearSiteButton);
+    actions.append(toggleProfileButton, clearProfileButton);
     headingWrap.append(title, subtitle);
     header.append(headingWrap, actions);
 
@@ -210,7 +200,7 @@ async function render(): Promise<void> {
       deleteButton.className = "options__secondary";
       deleteButton.addEventListener("click", () => {
         void (async () => {
-          await deleteRule(hostname, rule);
+          await deleteRule(profile.id, rule);
           await render();
         })();
       });
@@ -221,12 +211,12 @@ async function render(): Promise<void> {
     }
 
     card.append(header, list);
-    siteCards.push(card);
+    profileCards.push(card);
   }
 
-  siteListElement.replaceChildren(...siteCards);
-  emptyStateElement.hidden = siteCards.length > 0;
-  summaryElement.textContent = `표시 중인 사이트 ${siteCards.length}개 / 규칙 ${totalVisibleRules}개`;
+  siteListElement.replaceChildren(...profileCards);
+  emptyStateElement.hidden = profileCards.length > 0;
+  summaryElement.textContent = `표시 중인 프로필 ${profileCards.length}개 / 규칙 ${totalVisibleRules}개`;
 }
 
 refreshButtonElement.addEventListener("click", () => {

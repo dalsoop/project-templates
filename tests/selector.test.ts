@@ -31,12 +31,15 @@ void test("normalizeStore migrates version 1 shape to the current version", () =
   });
 
   assert.deepEqual(migrated, {
-    version: 2,
+    version: 3,
     settings: {
       globalEnabled: true
     },
-    sites: {
-      "example.com": {
+    profiles: [
+      {
+        id: migrated.profiles[0]?.id,
+        matchers: ["https://example.com/*"],
+        name: "example.com",
         enabled: true,
         rules: [
           {
@@ -47,6 +50,6 @@ void test("normalizeStore migrates version 1 shape to the current version", () =
         ],
         updatedAt: "2026-01-01T00:00:00.000Z"
       }
-    }
+    ]
   });
 });
