@@ -39,6 +39,24 @@ body {
   align-items: center;
 }
 
+.options__create-card {
+  margin-top: 16px;
+  padding: 14px;
+  border: 1px solid #c7baa4;
+  background: rgba(255, 255, 255, 0.62);
+}
+
+.options__section-title {
+  margin: 0 0 10px;
+  font-size: 14px;
+}
+
+.options__create-grid {
+  display: grid;
+  grid-template-columns: 220px minmax(280px, 1fr) 150px;
+  gap: 10px;
+}
+
 .options__input,
 .options__select,
 button {
@@ -107,6 +125,24 @@ button {
   font-size: 16px;
 }
 
+.options__profile-edit {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.options__matcher-list {
+  margin: 0;
+  padding-left: 18px;
+  color: #5b4e3f;
+  font-size: 12px;
+}
+
+.options__matcher-editor {
+  min-height: 72px;
+  resize: vertical;
+}
+
 .options__site-subtitle {
   margin: 6px 0 0;
   color: #5b4e3f;
@@ -153,6 +189,10 @@ button {
 
 @media (max-width: 800px) {
   .options__toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .options__create-grid {
     grid-template-columns: 1fr;
   }
 }

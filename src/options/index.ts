@@ -1,5 +1,5 @@
 import type { RuleProfile, RuleStore, StoredRule } from "../shared/types.js";
-import { normalizeStore, writeStore } from "../shared/storage.js";
+import { createProfile, deleteProfile, normalizeStore, renameProfile, setProfileMatchers, writeStore } from "../shared/storage.js";
 
 const STORAGE_KEY = "infocutter.ruleStore";
 
@@ -7,6 +7,9 @@ const searchInput = document.getElementById("search-input");
 const scopeFilter = document.getElementById("scope-filter");
 const refreshButton = document.getElementById("refresh-button");
 const toggleGlobalButton = document.getElementById("toggle-global-button");
+const newProfileName = document.getElementById("new-profile-name");
+const newProfileMatcher = document.getElementById("new-profile-matcher");
+const createProfileButton = document.getElementById("create-profile-button");
 const globalStatus = document.getElementById("global-status");
 const summary = document.getElementById("summary");
 const siteList = document.getElementById("site-list");
@@ -24,6 +27,9 @@ const searchInputElement = assertElement(searchInput, "search-input") as HTMLInp
 const scopeFilterElement = assertElement(scopeFilter, "scope-filter") as HTMLSelectElement;
 const refreshButtonElement = assertElement(refreshButton, "refresh-button") as HTMLButtonElement;
 const toggleGlobalButtonElement = assertElement(toggleGlobalButton, "toggle-global-button") as HTMLButtonElement;
+const newProfileNameElement = assertElement(newProfileName, "new-profile-name") as HTMLInputElement;
+const newProfileMatcherElement = assertElement(newProfileMatcher, "new-profile-matcher") as HTMLInputElement;
+const createProfileButtonElement = assertElement(createProfileButton, "create-profile-button") as HTMLButtonElement;
 const globalStatusElement = assertElement(globalStatus, "global-status") as HTMLParagraphElement;
 const summaryElement = assertElement(summary, "summary") as HTMLParagraphElement;
 const siteListElement = assertElement(siteList, "site-list") as HTMLDivElement;
@@ -78,10 +84,12 @@ function matchesSearch(rule: StoredRule, profile: RuleProfile, keyword: string):
 
 async function updateProfile(profileId: string, updater: (profile: RuleProfile) => RuleProfile): Promise<void> {
   const store = await readStore();
-  store.profiles = store.profiles.map((profile) => (
-    profile.id === profileId ? updater(profile) : profile
-  ));
-  await writeStore(store);
+  await writeStore({
+    ...store,
+    profiles: store.profiles.map((profile) => (
+      profile.id === profileId ? updater(profile) : profile
+    ))
+  });
 }
 
 async function deleteRule(profileId: string, targetRule: StoredRule): Promise<void> {
@@ -144,6 +152,26 @@ async function render(): Promise<void> {
     subtitle.className = "options__site-subtitle";
     subtitle.textContent = `${profile.enabled ? "프로필 사용 중" : "프로필 꺼짐"} · 매처 ${profileMatchersLabel(profile)} · 규칙 ${rules.length}개 표시`;
 
+    const editWrap = document.createElement("div");
+    editWrap.className = "options__profile-edit";
+
+    const nameInput = document.createElement("input");
+    nameInput.className = "options__input";
+    nameInput.type = "text";
+    nameInput.value = profile.name;
+
+    const matcherEditor = document.createElement("textarea");
+    matcherEditor.className = "options__input options__matcher-editor";
+    matcherEditor.value = profile.matchers.join("\n");
+
+    const matcherHint = document.createElement("ul");
+    matcherHint.className = "options__matcher-list";
+    matcherHint.innerHTML = [
+      "<li>한 줄에 matcher 하나씩 입력</li>",
+      "<li>예: https://mail.naver.com/*</li>",
+      "<li>* 와일드카드를 사용할 수 있습니다</li>"
+    ].join("");
+
     const actions = document.createElement("div");
     actions.className = "options__site-actions";
 
@@ -168,9 +196,32 @@ async function render(): Promise<void> {
       })();
     });
 
-    actions.append(toggleProfileButton, clearProfileButton);
+    const saveProfileButton = document.createElement("button");
+    saveProfileButton.type = "button";
+    saveProfileButton.textContent = "프로필 저장";
+    saveProfileButton.className = "options__secondary";
+    saveProfileButton.addEventListener("click", () => {
+      void (async () => {
+        await renameProfile(profile.id, nameInput.value);
+        await setProfileMatchers(profile.id, matcherEditor.value.split("\n"));
+        await render();
+      })();
+    });
+
+    const deleteProfileButton = document.createElement("button");
+    deleteProfileButton.type = "button";
+    deleteProfileButton.textContent = "프로필 삭제";
+    deleteProfileButton.addEventListener("click", () => {
+      void (async () => {
+        await deleteProfile(profile.id);
+        await render();
+      })();
+    });
+
+    actions.append(toggleProfileButton, clearProfileButton, saveProfileButton, deleteProfileButton);
     headingWrap.append(title, subtitle);
     header.append(headingWrap, actions);
+    editWrap.append(nameInput, matcherEditor, matcherHint);
 
     const list = document.createElement("ul");
     list.className = "options__rule-list";
@@ -210,7 +261,7 @@ async function render(): Promise<void> {
       list.append(item);
     }
 
-    card.append(header, list);
+    card.append(header, editWrap, list);
     profileCards.push(card);
   }
 
@@ -232,6 +283,15 @@ toggleGlobalButtonElement.addEventListener("click", () => {
         globalEnabled: !store.settings.globalEnabled
       }
     });
+    await render();
+  })();
+});
+
+createProfileButtonElement.addEventListener("click", () => {
+  void (async () => {
+    await createProfile(newProfileNameElement.value, newProfileMatcherElement.value);
+    newProfileNameElement.value = "";
+    newProfileMatcherElement.value = "";
     await render();
   })();
 });

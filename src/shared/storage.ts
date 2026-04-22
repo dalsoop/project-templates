@@ -216,6 +216,62 @@ export async function ensureProfileForUrl(url: string): Promise<RuleProfile> {
   return profile;
 }
 
+export async function createProfile(name: string, matcher: string): Promise<RuleProfile> {
+  const store = await readStore();
+  const profile: RuleProfile = {
+    ...emptyProfile(),
+    matchers: matcher ? [matcher] : [],
+    name: name.trim() || "새 프로필",
+    updatedAt: new Date().toISOString()
+  };
+
+  store.profiles.push(profile);
+  await writeStore(store);
+  return profile;
+}
+
+export async function updateProfile(
+  profileId: string,
+  updater: (profile: RuleProfile) => RuleProfile
+): Promise<RuleProfile | null> {
+  const store = await readStore();
+  const profile = store.profiles.find((item) => item.id === profileId);
+  if (!profile) {
+    return null;
+  }
+
+  const nextProfile = updater(profile);
+  store.profiles = store.profiles.map((item) => (item.id === profileId ? nextProfile : item));
+  await writeStore(store);
+  return nextProfile;
+}
+
+export async function renameProfile(profileId: string, name: string): Promise<RuleProfile | null> {
+  return updateProfile(profileId, (profile) => ({
+    ...profile,
+    name: name.trim() || profile.name,
+    updatedAt: new Date().toISOString()
+  }));
+}
+
+export async function setProfileMatchers(profileId: string, matchers: string[]): Promise<RuleProfile | null> {
+  const sanitizedMatchers = matchers
+    .map((matcher) => matcher.trim())
+    .filter((matcher) => matcher.length > 0);
+
+  return updateProfile(profileId, (profile) => ({
+    ...profile,
+    matchers: sanitizedMatchers,
+    updatedAt: new Date().toISOString()
+  }));
+}
+
+export async function deleteProfile(profileId: string): Promise<void> {
+  const store = await readStore();
+  store.profiles = store.profiles.filter((profile) => profile.id !== profileId);
+  await writeStore(store);
+}
+
 export async function addRuleToUrl(url: string, selector: string, frameScope: string | null): Promise<RuleProfile> {
   const store = await readStore();
   const current = findMatchingProfile(store, url) ?? (await ensureProfileForUrl(url));
