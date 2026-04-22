@@ -365,6 +365,54 @@ export async function removeRuleFromProfile(profileId: string, selector: string,
   return nextProfile;
 }
 
+export async function renameCardInProfile(profileId: string, cardId: string, cardName: string): Promise<RuleProfile | null> {
+  const nextName = cardName.trim();
+  if (!nextName) {
+    return null;
+  }
+
+  const store = await readStore();
+  const profile = store.profiles.find((item) => item.id === profileId);
+  if (!profile) {
+    return null;
+  }
+
+  const nextProfile: RuleProfile = {
+    ...profile,
+    rules: profile.rules.map((rule) => (
+      rule.cardId === cardId
+        ? {
+            ...rule,
+            cardName: nextName
+          }
+        : rule
+    )),
+    updatedAt: new Date().toISOString()
+  };
+
+  store.profiles = store.profiles.map((item) => (item.id === profile.id ? nextProfile : item));
+  await writeStore(store);
+  return nextProfile;
+}
+
+export async function removeCardFromProfile(profileId: string, cardId: string): Promise<RuleProfile | null> {
+  const store = await readStore();
+  const profile = store.profiles.find((item) => item.id === profileId);
+  if (!profile) {
+    return null;
+  }
+
+  const nextProfile: RuleProfile = {
+    ...profile,
+    rules: profile.rules.filter((rule) => rule.cardId !== cardId),
+    updatedAt: new Date().toISOString()
+  };
+
+  store.profiles = store.profiles.map((item) => (item.id === profile.id ? nextProfile : item));
+  await writeStore(store);
+  return nextProfile;
+}
+
 export async function clearProfileRules(profileId: string): Promise<RuleProfile | null> {
   const store = await readStore();
   const profile = store.profiles.find((item) => item.id === profileId);

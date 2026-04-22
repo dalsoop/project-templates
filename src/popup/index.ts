@@ -231,64 +231,80 @@ function frameScopeLabel(frameScope: string | null): string {
 }
 
 function buildRuleList(state: ActiveSiteState): void {
-  const mainRules = state.rules.filter((rule) => rule.frameScope === null);
-  const iframeRules = state.rules.filter((rule) => rule.frameScope !== null);
+  const cards = Array.from(
+    state.rules.reduce((map, rule) => {
+      const current = map.get(rule.cardId) ?? {
+        cardId: rule.cardId,
+        cardName: rule.cardName,
+        rules: [] as typeof state.rules
+      };
+      current.rules.push(rule);
+      map.set(rule.cardId, current);
+      return map;
+    }, new Map<string, { cardId: string; cardName: string; rules: typeof state.rules }>())
+      .values()
+  );
 
-  const createRuleItem = (rule: ActiveSiteState["rules"][number]): HTMLLIElement => {
+  const createCardItem = (card: { cardId: string; cardName: string; rules: typeof state.rules }): HTMLLIElement => {
     const item = document.createElement("li");
     item.className = "popup__rule-item";
 
-    const scopeText = document.createElement("div");
-    scopeText.className = "popup__meta";
-    scopeText.textContent = frameScopeLabel(rule.frameScope);
+    const cardTitle = document.createElement("div");
+    cardTitle.className = "popup__meta";
+    cardTitle.style.fontWeight = "700";
+    cardTitle.textContent = `카드: ${card.cardName}`;
 
-    const selectorText = document.createElement("code");
-    selectorText.className = "popup__rule-selector";
-    selectorText.textContent = rule.selector;
+    const summary = document.createElement("div");
+    summary.className = "popup__meta";
+    summary.textContent = `규칙 ${card.rules.length}개`;
 
-    const removeButton = document.createElement("button");
-    removeButton.type = "button";
-    removeButton.className = "popup__rule-remove";
-    removeButton.textContent = "삭제";
-    removeButton.addEventListener("click", () => {
-      void (async () => {
-        const nextState = await mutateContentScript<ActiveSiteState>(messageTypes.removeSiteRule, {
-          frameScope: rule.frameScope,
-          profileId: state.activeProfileId,
-          selector: rule.selector
+    const list = document.createElement("div");
+    list.style.display = "grid";
+    list.style.gap = "6px";
+
+    for (const rule of card.rules) {
+      const scopeText = document.createElement("div");
+      scopeText.className = "popup__meta";
+      scopeText.textContent = frameScopeLabel(rule.frameScope);
+
+      const selectorText = document.createElement("code");
+      selectorText.className = "popup__rule-selector";
+      selectorText.textContent = rule.selector;
+
+      const row = document.createElement("div");
+      row.style.padding = "8px";
+      row.style.background = "rgba(255,255,255,0.06)";
+
+      const removeButton = document.createElement("button");
+      removeButton.type = "button";
+      removeButton.className = "popup__rule-remove";
+      removeButton.textContent = "삭제";
+      removeButton.addEventListener("click", () => {
+        void (async () => {
+          const nextState = await mutateContentScript<ActiveSiteState>(messageTypes.removeSiteRule, {
+            frameScope: rule.frameScope,
+            profileId: state.activeProfileId,
+            selector: rule.selector
+          });
+          renderState(nextState);
+          statusElement.textContent = "선택자를 삭제했습니다.";
+        })().catch((error: unknown) => {
+          statusElement.textContent = error instanceof Error ? error.message : "선택자 삭제에 실패했습니다.";
         });
-        renderState(nextState);
-        statusElement.textContent = "선택자를 삭제했습니다.";
-      })().catch((error: unknown) => {
-        statusElement.textContent = error instanceof Error ? error.message : "선택자 삭제에 실패했습니다.";
       });
-    });
 
-    item.append(scopeText, selectorText, removeButton);
+      row.append(scopeText, selectorText, removeButton);
+      list.append(row);
+    }
+
+    item.append(cardTitle, summary, list);
     return item;
   };
 
   const items: HTMLElement[] = [];
-
-  const appendSection = (title: string, rules: ActiveSiteState["rules"]): void => {
-    if (rules.length === 0) {
-      return;
-    }
-
-    const sectionTitle = document.createElement("li");
-    sectionTitle.className = "popup__rule-item";
-    sectionTitle.style.background = "rgba(35, 31, 23, 0.06)";
-    sectionTitle.style.fontWeight = "700";
-    sectionTitle.textContent = title;
-    items.push(sectionTitle);
-
-    for (const rule of rules) {
-      items.push(createRuleItem(rule));
-    }
-  };
-
-  appendSection("메인 문서 규칙", mainRules);
-  appendSection("iframe 규칙", iframeRules);
+  for (const card of cards) {
+    items.push(createCardItem(card));
+  }
 
   ruleListElement.replaceChildren(...items);
   emptyStateElement.hidden = items.length > 0;

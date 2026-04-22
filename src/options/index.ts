@@ -1,5 +1,5 @@
 import type { RuleProfile, RuleStore, StoredRule } from "../shared/types.js";
-import { createProfile, deleteProfile, findMatchingProfile, moveProfile, normalizeStore, renameProfile, setProfileMatchers, writeStore } from "../shared/storage.js";
+import { createProfile, deleteProfile, findMatchingProfile, moveProfile, normalizeStore, renameCardInProfile, removeCardFromProfile, renameProfile, setProfileMatchers, writeStore } from "../shared/storage.js";
 
 const STORAGE_KEY = "infocutter.ruleStore";
 
@@ -277,49 +277,114 @@ async function render(): Promise<void> {
     const list = document.createElement("ul");
     list.className = "options__rule-list";
 
-    for (const rule of rules) {
+    const cards = Array.from(
+      rules.reduce((map, rule) => {
+        const current = map.get(rule.cardId) ?? {
+          cardId: rule.cardId,
+          cardName: rule.cardName,
+          rules: [] as typeof rules
+        };
+        current.rules.push(rule);
+        map.set(rule.cardId, current);
+        return map;
+      }, new Map<string, { cardId: string; cardName: string; rules: typeof rules }>())
+        .values()
+    );
+
+    for (const cardGroup of cards) {
       const item = document.createElement("li");
       item.className = "options__rule-item";
 
-      const scopeText = document.createElement("p");
-      scopeText.className = "options__rule-scope";
-      scopeText.textContent = frameScopeLabel(rule.frameScope);
+      const cardNameInput = document.createElement("input");
+      cardNameInput.className = "options__input";
+      cardNameInput.type = "text";
+      cardNameInput.value = cardGroup.cardName;
 
-      const metaText = document.createElement("p");
-      metaText.className = "options__rule-meta";
-      metaText.textContent = `생성 시각: ${rule.createdAt}`;
+      const cardMeta = document.createElement("p");
+      cardMeta.className = "options__rule-meta";
+      cardMeta.textContent = `카드 규칙 ${cardGroup.rules.length}개`;
 
-      const code = document.createElement("textarea");
-      code.className = "options__input options__rule-editor";
-      code.value = rule.selector;
+      const cardActions = document.createElement("div");
+      cardActions.className = "options__rule-actions";
 
-      const actions = document.createElement("div");
-      actions.className = "options__rule-actions";
-
-      const saveButton = document.createElement("button");
-      saveButton.type = "button";
-      saveButton.textContent = "저장";
-      saveButton.className = "options__secondary";
-      saveButton.addEventListener("click", () => {
+      const saveCardButton = document.createElement("button");
+      saveCardButton.type = "button";
+      saveCardButton.textContent = "카드 이름 저장";
+      saveCardButton.className = "options__secondary";
+      saveCardButton.addEventListener("click", () => {
         void (async () => {
-          await editRule(profile.id, rule, code.value);
+          await renameCardInProfile(profile.id, cardGroup.cardId, cardNameInput.value);
           await render();
         })();
       });
 
-      const deleteButton = document.createElement("button");
-      deleteButton.type = "button";
-      deleteButton.textContent = "삭제";
-      deleteButton.className = "options__secondary";
-      deleteButton.addEventListener("click", () => {
+      const deleteCardButton = document.createElement("button");
+      deleteCardButton.type = "button";
+      deleteCardButton.textContent = "카드 삭제";
+      deleteCardButton.className = "options__secondary";
+      deleteCardButton.addEventListener("click", () => {
         void (async () => {
-          await deleteRule(profile.id, rule);
+          await removeCardFromProfile(profile.id, cardGroup.cardId);
           await render();
         })();
       });
 
-      actions.append(saveButton, deleteButton);
-      item.append(scopeText, metaText, code, actions);
+      cardActions.append(saveCardButton, deleteCardButton);
+      item.append(cardNameInput, cardMeta, cardActions);
+
+      const innerList = document.createElement("div");
+      innerList.style.display = "grid";
+      innerList.style.gap = "10px";
+      innerList.style.marginTop = "10px";
+
+      for (const rule of cardGroup.rules) {
+        const ruleWrap = document.createElement("div");
+        ruleWrap.style.padding = "10px";
+        ruleWrap.style.background = "rgba(255,255,255,0.06)";
+
+        const scopeText = document.createElement("p");
+        scopeText.className = "options__rule-scope";
+        scopeText.textContent = frameScopeLabel(rule.frameScope);
+
+        const metaText = document.createElement("p");
+        metaText.className = "options__rule-meta";
+        metaText.textContent = `생성 시각: ${rule.createdAt}`;
+
+        const code = document.createElement("textarea");
+        code.className = "options__input options__rule-editor";
+        code.value = rule.selector;
+
+        const actions = document.createElement("div");
+        actions.className = "options__rule-actions";
+
+        const saveButton = document.createElement("button");
+        saveButton.type = "button";
+        saveButton.textContent = "저장";
+        saveButton.className = "options__secondary";
+        saveButton.addEventListener("click", () => {
+          void (async () => {
+            await editRule(profile.id, rule, code.value);
+            await render();
+          })();
+        });
+
+        const deleteButton = document.createElement("button");
+        deleteButton.type = "button";
+        deleteButton.textContent = "삭제";
+        deleteButton.className = "options__secondary";
+        deleteButton.addEventListener("click", () => {
+          void (async () => {
+            await deleteRule(profile.id, rule);
+            await render();
+          })();
+        });
+
+        actions.append(saveButton, deleteButton);
+        ruleWrap.append(scopeText, metaText, code, actions);
+        innerList.append(ruleWrap);
+      }
+
+      item.append(innerList);
       list.append(item);
     }
 
