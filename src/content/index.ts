@@ -1,7 +1,17 @@
-import { PICKER_OVERLAY_ID, STYLE_ELEMENT_ID } from "../shared/constants.js";
+import { PICKER_OVERLAY_ID, STORAGE_KEY, STYLE_ELEMENT_ID } from "../shared/constants.js";
 import { messageTypes } from "../shared/messages.js";
 import { buildSelector, selectorCss } from "../shared/selector.js";
-import { addSiteRule, clearSiteRules, hostnameFromUrl, readActiveSiteState, readSiteRules } from "../shared/storage.js";
+import {
+  addSiteRule,
+  clearSiteRules,
+  hostnameFromUrl,
+  readActiveSiteState,
+  removeSiteRule,
+  setGlobalEnabled,
+  setSiteEnabled
+} from "../shared/storage.js";
+
+let pickerStop: (() => void) | null = null;
 
 function ensureStyleElement(): HTMLStyleElement {
   const existing = document.getElementById(STYLE_ELEMENT_ID);
@@ -16,18 +26,24 @@ function ensureStyleElement(): HTMLStyleElement {
 }
 
 async function renderRules(): Promise<void> {
-  const hostname = hostnameFromUrl(window.location.href);
-  const siteRules = await readSiteRules(hostname);
+  const activeSiteState = await readActiveSiteState(window.location.href);
   const style = ensureStyleElement();
-  style.textContent = selectorCss(siteRules.selectors);
+
+  if (!activeSiteState.globalEnabled || !activeSiteState.siteEnabled) {
+    style.textContent = "";
+    return;
+  }
+
+  style.textContent = selectorCss(activeSiteState.selectors);
 }
 
-function removePickerOverlay(): void {
+function removePickerArtifacts(): void {
   document.getElementById(PICKER_OVERLAY_ID)?.remove();
+  document.getElementById(`${PICKER_OVERLAY_ID}-label`)?.remove();
 }
 
 function buildOverlay(): HTMLDivElement {
-  removePickerOverlay();
+  removePickerArtifacts();
   const overlay = document.createElement("div");
   overlay.id = PICKER_OVERLAY_ID;
   overlay.style.position = "fixed";
@@ -40,8 +56,28 @@ function buildOverlay(): HTMLDivElement {
   return overlay;
 }
 
+function buildPickerLabel(): HTMLDivElement {
+  const label = document.createElement("div");
+  label.id = `${PICKER_OVERLAY_ID}-label`;
+  label.style.position = "fixed";
+  label.style.right = "16px";
+  label.style.bottom = "16px";
+  label.style.padding = "10px 12px";
+  label.style.background = "#231f17";
+  label.style.color = "#f7f4eb";
+  label.style.font = '12px "SF Mono", "IBM Plex Mono", ui-monospace, monospace';
+  label.style.zIndex = "2147483647";
+  label.style.pointerEvents = "none";
+  label.textContent = "Infocutter pick mode: click an element, or press Escape.";
+  document.documentElement.append(label);
+  return label;
+}
+
 function startPicker(): void {
+  pickerStop?.();
+
   const overlay = buildOverlay();
+  const label = buildPickerLabel();
   let active = true;
 
   const updateOverlay = (event: MouseEvent): void => {
@@ -66,8 +102,12 @@ function startPicker(): void {
     document.removeEventListener("mousemove", updateOverlay, true);
     document.removeEventListener("click", handleClick, true);
     document.removeEventListener("keydown", handleKeydown, true);
-    removePickerOverlay();
+    overlay.remove();
+    label.remove();
+    pickerStop = null;
   };
+
+  pickerStop = stopPicker;
 
   const handleKeydown = (event: KeyboardEvent): void => {
     if (event.key === "Escape") {
@@ -130,6 +170,54 @@ chrome.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) =
       return;
     }
 
+    if (type === messageTypes.removeSiteRule) {
+      const selector = "selector" in message && typeof message.selector === "string" ? message.selector : null;
+      if (!selector) {
+        sendResponse({ ok: false });
+        return;
+      }
+
+      await removeSiteRule(hostnameFromUrl(window.location.href), selector);
+      await renderRules();
+      sendResponse({
+        ok: true,
+        data: await readActiveSiteState(window.location.href)
+      });
+      return;
+    }
+
+    if (type === messageTypes.toggleSiteEnabled) {
+      const enabled = "enabled" in message && typeof message.enabled === "boolean" ? message.enabled : null;
+      if (enabled === null) {
+        sendResponse({ ok: false });
+        return;
+      }
+
+      await setSiteEnabled(hostnameFromUrl(window.location.href), enabled);
+      await renderRules();
+      sendResponse({
+        ok: true,
+        data: await readActiveSiteState(window.location.href)
+      });
+      return;
+    }
+
+    if (type === messageTypes.toggleGlobalEnabled) {
+      const enabled = "enabled" in message && typeof message.enabled === "boolean" ? message.enabled : null;
+      if (enabled === null) {
+        sendResponse({ ok: false });
+        return;
+      }
+
+      await setGlobalEnabled(enabled);
+      await renderRules();
+      sendResponse({
+        ok: true,
+        data: await readActiveSiteState(window.location.href)
+      });
+      return;
+    }
+
     sendResponse({ ok: false });
   })().catch((error: unknown) => {
     console.error("Content script message handling failed", error);
@@ -137,6 +225,14 @@ chrome.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) =
   });
 
   return true;
+});
+
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  if (areaName !== "local" || !(STORAGE_KEY in changes)) {
+    return;
+  }
+
+  void renderRules();
 });
 
 void renderRules();

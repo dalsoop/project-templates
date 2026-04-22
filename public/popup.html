@@ -9,19 +9,31 @@
   <body>
     <main class="popup">
       <header class="popup__header">
-        <p class="popup__eyebrow">Infocutter Template</p>
-        <h1 class="popup__title">DOM Hider</h1>
+        <p class="popup__eyebrow">Infocutter</p>
+        <h1 class="popup__title">Page Cutter</h1>
       </header>
 
       <section class="popup__panel">
         <p id="site-label" class="popup__site">Loading active site...</p>
         <p id="rule-count" class="popup__meta">0 saved selectors</p>
+        <p id="site-state" class="popup__meta">Site is enabled</p>
+        <p id="global-state" class="popup__meta">Extension is enabled</p>
       </section>
 
       <section class="popup__actions">
         <button id="pick-button" type="button">Hide element on this site</button>
+        <button id="toggle-site-button" type="button" class="popup__secondary">Disable on this site</button>
+        <button id="toggle-global-button" type="button" class="popup__secondary">Disable everywhere</button>
         <button id="refresh-button" type="button" class="popup__secondary">Refresh</button>
         <button id="clear-button" type="button" class="popup__danger">Clear site rules</button>
+      </section>
+
+      <section class="popup__rules">
+        <div class="popup__rules-header">
+          <h2 class="popup__rules-title">Saved selectors</h2>
+        </div>
+        <ul id="rule-list" class="popup__rule-list"></ul>
+        <p id="empty-state" class="popup__empty">No selectors saved for this site yet.</p>
       </section>
 
       <p id="status" class="popup__status" role="status" aria-live="polite"></p>
