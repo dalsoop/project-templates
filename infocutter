@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cmd="${1:-help}"
+shift || true
+
+case "$cmd" in
+  dev)
+    npm run pipe:dev -- "$@"
+    ;;
+  doctor)
+    npm run pipe:doctor -- "$@"
+    ;;
+  build)
+    npm run pipe:build -- "$@"
+    ;;
+  watch)
+    npm run pipe:watch -- "$@"
+    ;;
+  check)
+    npm run pipe:check -- "$@"
+    ;;
+  rc)
+    npm run pipe:rc -- "$@"
+    ;;
+  reset)
+    npm run pipe:reset -- "$@"
+    ;;
+  help|-h|--help)
+    cat <<'EOF'
+인포커터 커맨드
+
+  ./infocutter dev
+  ./infocutter doctor
+  ./infocutter build
+  ./infocutter watch
+  ./infocutter check
+  ./infocutter rc
+  ./infocutter reset
+EOF
+    ;;
+  *)
+    echo "알 수 없는 커맨드: $cmd" >&2
+    echo "./infocutter help 를 실행하세요." >&2
+    exit 1
+    ;;
+esac
