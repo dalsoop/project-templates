@@ -162,6 +162,7 @@ parameters:
 rules:
     - Tools\PHPStan\Rules\NoConfigDefaultRule
     - Tools\PHPStan\Rules\KoreanTestNameRule
+    - Tools\PHPStan\Rules\NoRawEnvAccessRule
 
 services:
     -

@@ -12,7 +12,6 @@
     },
     "require-dev": {
         "canvural/larastan-strict-rules": "^3.0",
-        "captainhook/captainhook": "^5.25",
         "crissi/laravel-env-phpstan-rules": "^0.1.1",
         "ergebnis/phpstan-rules": "^2.4",
         "fakerphp/faker": "^1.23",
@@ -51,7 +50,8 @@
             "@php artisan key:generate",
             "@php artisan migrate --force",
             "npm install",
-            "npm run build"
+            "npm run build",
+            "npx lefthook install"
         ],
         "dev": [
             "Composer\\Config::disableProcessTimeout",
@@ -67,7 +67,9 @@
         "lint": [
             "vendor/bin/pint --test",
             "bash tools/lint.sh",
-            "bash tools/scripts/phpmnd-gate.sh"
+            "bash tools/scripts/phpmnd-gate.sh",
+            "bash tools/scripts/hardcode-gate.sh",
+            "bash tools/scripts/phpcpd-gate.sh"
         ],
         "ci": [
             "@composer analyse",
@@ -103,7 +105,6 @@
         "preferred-install": "dist",
         "sort-packages": true,
         "allow-plugins": {
-            "captainhook/captainhook": true,
             "pestphp/pest-plugin": true,
             "php-http/discovery": true
         }
