@@ -1,0 +1,7 @@
+<?php
+
+declare(strict_types=1);
+
+it('기본 단언이 동작한다', function (): void {
+    expect(true)->toBeTrue();
+});

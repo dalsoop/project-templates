@@ -1,0 +1,9 @@
+<?php
+
+declare(strict_types=1);
+
+it('페이지가 정상 응답을 반환한다', function (): void {
+    $response = $this->get('/');
+
+    $response->assertOk();
+});

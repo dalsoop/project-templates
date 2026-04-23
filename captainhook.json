@@ -1,0 +1,40 @@
+{
+    "pre-commit": {
+        "enabled": true,
+        "actions": [
+            {
+                "action": "bash tools/lint.sh",
+                "conditions": []
+            },
+            {
+                "action": "vendor/bin/pint --test",
+                "conditions": []
+            },
+            {
+                "action": "vendor/bin/phpstan analyse --memory-limit=1G --no-progress --error-format=compact",
+                "conditions": []
+            },
+            {
+                "action": "bash tools/scripts/phpmnd-gate.sh",
+                "conditions": []
+            }
+        ]
+    },
+    "commit-msg": {
+        "enabled": false,
+        "actions": []
+    },
+    "pre-push": {
+        "enabled": true,
+        "actions": [
+            {
+                "action": "vendor/bin/phpstan analyse --memory-limit=1G --no-progress",
+                "conditions": []
+            },
+            {
+                "action": "vendor/bin/pest --parallel",
+                "conditions": []
+            }
+        ]
+    }
+}

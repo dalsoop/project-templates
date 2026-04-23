@@ -1,0 +1,7 @@
+<?php
+
+declare(strict_types=1);
+
+it('{{ controllerClass }} 엔드포인트를 구현한다', function (): void {
+    expect(true)->toBeTrue();
+});
