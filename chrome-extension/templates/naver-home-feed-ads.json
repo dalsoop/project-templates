@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "slug": "naver-home-feed-ads",
+  "name": "네이버 홈 피드 광고",
+  "description": "네이버 홈 추천 피드 안의 광고성 영역을 한 번에 관리하기 위한 템플릿입니다.",
+  "matchers": [
+    "https://www.naver.com/*"
+  ],
+  "cards": [
+    {
+      "id": "naver-feed-ads",
+      "name": "추천 피드 광고",
+      "enabled": true,
+      "note": "추천 피드 안의 AD 카드 묶음",
+      "rules": [
+        {
+          "frameScope": null,
+          "selector": ".feed_area"
+        }
+      ]
+    }
+  ]
+}

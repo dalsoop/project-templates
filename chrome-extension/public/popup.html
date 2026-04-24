@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>인포커터</title>
+    <link rel="stylesheet" href="./popup.css" />
+  </head>
+  <body>
+    <main class="popup">
+      <header class="popup__header">
+        <p class="popup__eyebrow">인포커터</p>
+        <h1 class="popup__title">페이지 커터</h1>
+      </header>
+
+      <section class="popup__panel">
+        <p id="site-label" class="popup__site">현재 사이트를 불러오는 중...</p>
+        <p id="rule-count" class="popup__meta">저장된 선택자 0개</p>
+        <p id="profile-name" class="popup__meta">현재 프로필을 불러오는 중...</p>
+        <p id="profile-matchers" class="popup__meta">매처 정보를 불러오는 중...</p>
+        <p id="site-state" class="popup__meta">이 사이트에서 사용 중</p>
+        <p id="global-state" class="popup__meta">확장 기능이 켜져 있음</p>
+        <p id="picker-state" class="popup__meta">선택 포커스 상태를 불러오는 중...</p>
+      </section>
+
+      <section class="popup__actions">
+        <button id="pick-button" type="button">페이지에서 요소 선택 시작</button>
+        <button id="toggle-site-button" type="button" class="popup__secondary">이 사이트에서 끄기</button>
+        <button id="toggle-global-button" type="button" class="popup__secondary">전체 끄기</button>
+        <button id="manage-button" type="button" class="popup__secondary">관리 페이지 열기</button>
+        <button id="refresh-button" type="button" class="popup__secondary">새로고침</button>
+        <button id="clear-button" type="button" class="popup__danger">이 사이트 규칙 모두 삭제</button>
+      </section>
+
+      <section class="popup__guide">
+        <h2 class="popup__guide-title">사용 방법</h2>
+        <p class="popup__guide-step">1. <strong>페이지에서 요소 선택 시작</strong> 버튼을 누르세요.</p>
+        <p class="popup__guide-step">2. 웹페이지로 돌아가세요.</p>
+        <p class="popup__guide-step">3. 숨기고 싶은 요소를 클릭하세요.</p>
+        <p class="popup__guide-step">4. 선택 모드를 취소하려면 <strong>Escape</strong> 키를 누르세요.</p>
+      </section>
+
+      <section class="popup__debug">
+        <div class="popup__rules-header">
+          <h2 class="popup__rules-title">진단</h2>
+        </div>
+        <p id="debug-summary" class="popup__meta">진단 정보를 불러오는 중...</p>
+        <button id="debug-button" type="button" class="popup__secondary">진단 다시 실행</button>
+      </section>
+
+      <section class="popup__rules">
+        <div class="popup__rules-header">
+          <h2 class="popup__rules-title">저장된 선택자</h2>
+        </div>
+        <ul id="rule-list" class="popup__rule-list"></ul>
+        <p id="empty-state" class="popup__empty">이 사이트에는 아직 저장된 선택자가 없습니다.</p>
+      </section>
+
+      <p id="status" class="popup__status" role="status" aria-live="polite"></p>
+    </main>
+    <script type="module" src="src/popup/index.js"></script>
+  </body>
+</html>

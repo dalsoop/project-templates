@@ -1,0 +1,261 @@
+:root {
+  color-scheme: light;
+  font-family: "SF Mono", "IBM Plex Mono", ui-monospace, monospace;
+  background: linear-gradient(180deg, #f7f4eb 0%, #efe8da 100%);
+  color: #231f17;
+}
+
+body {
+  margin: 0;
+}
+
+.options {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+.options__header {
+  margin-bottom: 20px;
+}
+
+.options__eyebrow {
+  margin: 0 0 8px;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #7a6d59;
+}
+
+.options__title {
+  margin: 0;
+  font-size: 32px;
+}
+
+.options__toolbar {
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) 220px 140px 140px;
+  gap: 10px;
+  align-items: center;
+}
+
+.options__create-card {
+  margin-top: 16px;
+  padding: 14px;
+  border: 1px solid #c7baa4;
+  background: rgba(255, 255, 255, 0.62);
+}
+
+.options__section-title {
+  margin: 0 0 10px;
+  font-size: 14px;
+}
+
+.options__create-grid {
+  display: grid;
+  grid-template-columns: 220px minmax(280px, 1fr) 150px;
+  gap: 10px;
+}
+
+.options__template-toolbar {
+  display: grid;
+  grid-template-columns: minmax(280px, 1fr) 180px;
+  gap: 10px;
+}
+
+.options__input,
+.options__select,
+button {
+  font: inherit;
+  padding: 10px 12px;
+  border: 1px solid #c7baa4;
+}
+
+button {
+  cursor: pointer;
+  background: #231f17;
+  color: #f7f4eb;
+  border-color: #231f17;
+}
+
+.options__secondary {
+  background: transparent;
+  color: #231f17;
+}
+
+.options__status-card {
+  margin-top: 16px;
+  padding: 14px;
+  border: 1px solid #c7baa4;
+  background: rgba(255, 255, 255, 0.6);
+}
+
+.options__meta {
+  margin: 0;
+}
+
+.options__meta + .options__meta {
+  margin-top: 8px;
+}
+
+.options__list-wrap {
+  margin-top: 18px;
+}
+
+.options__site-list {
+  display: grid;
+  gap: 16px;
+}
+
+.options__template-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.options__template-card {
+  padding: 12px;
+  border: 1px solid #ddd4c1;
+  background: rgba(247, 244, 235, 0.85);
+}
+
+.options__template-title {
+  margin: 0 0 6px;
+  font-size: 14px;
+}
+
+.options__template-description {
+  margin: 0 0 8px;
+  color: #5b4e3f;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.options__template-meta {
+  margin: 0 0 8px;
+  color: #5b4e3f;
+  font-size: 12px;
+}
+
+.options__template-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.options__site-card {
+  padding: 16px;
+  border: 1px solid #c7baa4;
+  background: rgba(255, 255, 255, 0.66);
+}
+
+.options__site-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.options__site-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.options__priority-badge {
+  display: inline-block;
+  margin-top: 6px;
+  padding: 4px 8px;
+  border: 1px solid #d7ceb9;
+  background: rgba(247, 244, 235, 0.9);
+  font-size: 12px;
+  color: #5b4e3f;
+}
+
+.options__site-title {
+  margin: 0;
+  font-size: 16px;
+}
+
+.options__profile-edit {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.options__matcher-list {
+  margin: 0;
+  padding-left: 18px;
+  color: #5b4e3f;
+  font-size: 12px;
+}
+
+.options__matcher-editor {
+  min-height: 72px;
+  resize: vertical;
+}
+
+.options__site-subtitle {
+  margin: 6px 0 0;
+  color: #5b4e3f;
+  font-size: 13px;
+}
+
+.options__rule-list {
+  list-style: none;
+  margin: 14px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.options__rule-item {
+  padding: 12px;
+  border: 1px solid #ddd4c1;
+  background: rgba(247, 244, 235, 0.85);
+}
+
+.options__rule-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.options__rule-scope,
+.options__rule-meta {
+  margin: 0 0 6px;
+  font-size: 12px;
+  color: #5b4e3f;
+}
+
+.options__rule-code {
+  display: block;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.options__rule-editor {
+  width: 100%;
+  min-height: 80px;
+  box-sizing: border-box;
+  resize: vertical;
+}
+
+.options__empty {
+  margin: 0;
+  color: #5b4e3f;
+}
+
+@media (max-width: 800px) {
+  .options__toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .options__create-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .options__template-toolbar {
+    grid-template-columns: 1fr;
+  }
+}

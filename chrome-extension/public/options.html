@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>인포커터 관리</title>
+    <link rel="stylesheet" href="./options.css" />
+  </head>
+  <body>
+    <main class="options">
+      <header class="options__header">
+        <p class="options__eyebrow">인포커터 관리자</p>
+        <h1 class="options__title">규칙 관리</h1>
+      </header>
+
+      <section class="options__toolbar">
+        <input id="search-input" class="options__input" type="search" placeholder="사이트 또는 선택자 검색" />
+        <select id="scope-filter" class="options__select">
+          <option value="all">전체 규칙</option>
+          <option value="main">메인 문서 규칙</option>
+          <option value="iframe">iframe 규칙</option>
+        </select>
+        <button id="refresh-button" type="button">새로고침</button>
+        <button id="toggle-global-button" type="button" class="options__secondary">전체 끄기</button>
+      </section>
+
+      <section class="options__create-card">
+        <h2 class="options__section-title">프로필 추가</h2>
+        <div class="options__create-grid">
+          <input id="new-profile-name" class="options__input" type="text" placeholder="프로필 이름" />
+          <input id="new-profile-matcher" class="options__input" type="text" placeholder="예: https://mail.naver.com/*" />
+          <button id="create-profile-button" type="button">프로필 만들기</button>
+        </div>
+      </section>
+
+      <section class="options__create-card">
+        <h2 class="options__section-title">URL 매칭 테스트</h2>
+        <div class="options__create-grid">
+          <input id="url-test-input" class="options__input" type="text" placeholder="예: https://mail.naver.com/v3/" />
+          <button id="url-test-button" type="button">매칭 확인</button>
+        </div>
+        <p id="url-test-result" class="options__meta">테스트할 URL을 입력하면 현재 우선순위 기준으로 어떤 프로필이 적용되는지 보여줍니다.</p>
+      </section>
+
+      <section class="options__create-card">
+        <h2 class="options__section-title">템플릿 서버</h2>
+        <div class="options__template-toolbar">
+          <input id="template-server-url" class="options__input" type="text" placeholder="예: http://127.0.0.1:41800" />
+          <button id="refresh-templates-button" type="button">템플릿 불러오기</button>
+        </div>
+        <p id="template-status" class="options__meta">로컬 템플릿 서버를 켜면 네이버 같은 사이트용 템플릿을 불러와 적용할 수 있습니다.</p>
+        <div id="template-list" class="options__template-list"></div>
+      </section>
+
+      <section class="options__status-card">
+        <p id="global-status" class="options__meta">전역 상태를 불러오는 중...</p>
+        <p id="summary" class="options__meta">규칙 통계를 불러오는 중...</p>
+      </section>
+
+      <section class="options__list-wrap">
+        <div id="site-list" class="options__site-list"></div>
+        <p id="empty-state" class="options__empty">조건에 맞는 규칙이 없습니다.</p>
+      </section>
+    </main>
+    <script type="module" src="src/options/index.js"></script>
+  </body>
+</html>

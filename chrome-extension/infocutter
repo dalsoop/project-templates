@@ -1,0 +1,89 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cmd="${1:-help}"
+shift || true
+
+case "$cmd" in
+  dev)
+    npm run pipe:dev -- "$@"
+    ;;
+  doctor)
+    npm run pipe:doctor -- "$@"
+    ;;
+  templates|tpl)
+    npm run pipe:templates -- "$@"
+    ;;
+  build|b)
+    npm run pipe:build -- "$@"
+    ;;
+  watch|w)
+    npm run pipe:watch -- "$@"
+    ;;
+  check|c)
+    npm run pipe:check -- "$@"
+    ;;
+  lint)
+    npm run pipe:lint -- "$@"
+    ;;
+  typecheck|types)
+    npm run pipe:typecheck -- "$@"
+    ;;
+  test)
+    npm run pipe:test -- "$@"
+    ;;
+  package|pkg)
+    npm run pipe:package -- "$@"
+    ;;
+  clean)
+    npm run pipe:clean -- "$@"
+    ;;
+  rebuild)
+    npm run pipe:rebuild -- "$@"
+    ;;
+  rc)
+    npm run pipe:rc -- "$@"
+    ;;
+  reset)
+    npm run pipe:reset -- "$@"
+    ;;
+  help|-h|--help)
+    cat <<'EOF'
+인포커터 커맨드
+
+일상 작업
+  ./infocutter build
+  ./infocutter check
+  ./infocutter watch
+  ./infocutter doctor
+  ./infocutter templates
+
+개별 확인
+  ./infocutter lint
+  ./infocutter typecheck
+  ./infocutter test
+
+산출물 / 정리
+  ./infocutter package
+  ./infocutter rebuild
+  ./infocutter clean
+  ./infocutter reset
+
+축약형
+  ./infocutter b
+  ./infocutter c
+  ./infocutter w
+  ./infocutter pkg
+  ./infocutter tpl
+
+기존 커맨드
+  ./infocutter dev
+  ./infocutter rc
+EOF
+    ;;
+  *)
+    echo "알 수 없는 커맨드: $cmd" >&2
+    echo "./infocutter help 를 실행하세요." >&2
+    exit 1
+    ;;
+esac
