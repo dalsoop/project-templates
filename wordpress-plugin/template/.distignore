@@ -1,0 +1,28 @@
+# Files excluded from WordPress.org SVN deploy.
+# Keeps the repo lean — only ship what end users need at runtime.
+
+/.git
+/.github
+/.gitignore
+/.distignore
+/.editorconfig
+/.phpunit.result.cache
+/.phpcs-cache
+/node_modules
+/tests
+/bin
+/docs
+/coverage
+/src
+composer.json
+composer.lock
+package.json
+package-lock.json
+phpcs.xml
+phpunit.xml
+README.md
+CHANGELOG.md
+CONTRIBUTING.md
+*.md.example
+*.log
+.DS_Store
