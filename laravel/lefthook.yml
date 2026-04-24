@@ -1,0 +1,23 @@
+pre-commit:
+  parallel: true
+  commands:
+    lint:
+      run: bash tools/lint.sh
+    pint:
+      run: vendor/bin/pint --test
+    phpstan:
+      run: vendor/bin/phpstan analyse --memory-limit=1G --no-progress
+    phpmnd:
+      run: bash tools/scripts/phpmnd-gate.sh
+    hardcode:
+      run: bash tools/scripts/hardcode-gate.sh
+    phpcpd:
+      run: bash tools/scripts/phpcpd-gate.sh
+
+pre-push:
+  parallel: true
+  commands:
+    phpstan:
+      run: vendor/bin/phpstan analyse --memory-limit=1G --no-progress
+    test:
+      run: vendor/bin/pest --parallel

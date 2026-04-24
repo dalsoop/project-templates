@@ -1,0 +1,22 @@
+<?php
+
+declare(strict_types=1);
+
+namespace {{ namespace }};
+
+use App\Http\Controllers\Controller;
+use {{ actionNamespace }};
+use Illuminate\Http\Request;
+use Illuminate\Http\Response;
+
+final class {{ class }} extends Controller
+{
+    public function __construct(private readonly {{ actionClass }} ${{ actionVariable }}) {}
+
+    public function __invoke(Request $request): Response
+    {
+        ($this->{{ actionVariable }})($request);
+
+        return response()->noContent();
+    }
+}

@@ -1,0 +1,181 @@
+includes:
+    - vendor/larastan/larastan/extension.neon
+    - vendor/phpstan/phpstan-strict-rules/rules.neon
+    - vendor/phpstan/phpstan-deprecation-rules/rules.neon
+    - vendor/canvural/larastan-strict-rules/rules.neon
+    - vendor/crissi/laravel-env-phpstan-rules/rules.neon
+    - vendor/ergebnis/phpstan-rules/rules.neon
+    - vendor/shipmonk/phpstan-rules/rules.neon
+
+parameters:
+    level: 8
+    paths:
+        - app
+        - tests
+        - database/seeders
+        - database/factories
+        - config
+        - bootstrap/app.php
+        - bootstrap/providers.php
+        - tools/phpstan/Rules
+    excludePaths:
+        - database/migrations/*
+        - vendor/*
+        - storage/*
+        - bootstrap/cache/*
+
+    reportUnmatchedIgnoredErrors: false
+    treatPhpDocTypesAsCertain: false
+
+    larastanStrictRules:
+        allRules: true
+        noPropertyAccessor: false
+        noFacade: false
+
+    shipmonkRules:
+        enableAllRules: true
+        forbidCheckedExceptionInCallable:
+            enabled: false
+
+    allowedGlobalFunctions:
+        - app
+        - auth
+        - config
+        - view
+        - env
+        - now
+        - fake
+        - filled
+        - blank
+        - __
+        - trans
+        - route
+        - url
+        - asset
+        - storage_path
+        - app_path
+        - base_path
+        - config_path
+        - database_path
+        - public_path
+        - resource_path
+        - report
+        - abort
+        - back
+        - redirect
+        - response
+        - logger
+        - info
+        - event
+        - dispatch
+        - broadcast
+        - cache
+        - session
+        - request
+        - old
+        - csrf_token
+        - csrf_field
+        - bcrypt
+        - collect
+        - optional
+        - tap
+        - e
+        - resolve      # Blade 컴포넌트 컴파일러가 내부적으로 사용
+        - abort_unless # 권한 체크 관용 패턴
+        - abort_if
+        - data_get
+        - method_field
+        - head
+        - last
+        - value
+        - with
+        - retry
+
+    ergebnis:
+        declareStrictTypes:
+            enabled: true
+        final:
+            enabled: true
+        noPhpstanIgnore:
+            enabled: false
+        noExtends:
+            enabled: false
+        noNamedArgument:
+            enabled: false
+        noNullableReturnTypeDeclaration:
+            enabled: false
+        noParameterWithNullableTypeDeclaration:
+            enabled: false
+        noParameterWithNullDefaultValue:
+            enabled: false
+        noConstructorParameterWithDefaultValue:
+            enabled: false
+
+    ignoreErrors:
+        # Eloquent builder 체인은 Laravel 관용 — Model::query() 시작 후 인스턴스 메서드로 체인
+        -
+            identifier: staticMethod.dynamicCall
+            path: app/*
+        -
+            identifier: staticMethod.dynamicCall
+            path: tests/*
+        -
+            identifier: staticMethod.dynamicCall
+            path: database/*
+        # Pest 는 $this 를 TestCall 프록시로 동적 해결 — phpstan 이 추적 불가
+        -
+            identifier: method.notFound
+            path: tests/*
+        -
+            identifier: shipmonk.methodCallOnMixed
+            path: tests/*
+        # config/* 은 프레임워크 인프라 — env(KEY, default) 는 Laravel 컨벤션
+        -
+            identifier: prelik.noConfigDefault
+            path: config/*
+        # 미들웨어 handle(Request, Closure): Response 반환 필수 — listener 규칙과 충돌
+        -
+            identifier: larastanStrictRules.listenerShouldHaveVoidReturnType
+            path: app/Http/Middleware/*
+        # BelongsTo 관계 프로퍼티를 Larastan이 non-nullable로 추론 → defensive ?-> 패턴 허용
+        -
+            identifier: nullsafe.neverNull
+        # optional() 헬퍼 반환값은 mixed — Blade 템플릿 관용 패턴
+        -
+            identifier: shipmonk.methodCallOnMixed
+        # 테스트: assertViewHas / 클로저 콜백은 Livewire·Laravel 내부 mixed 타입
+        -
+            identifier: shipmonk.unknownClosureParamType
+            path: tests/*
+        # 테스트: fresh()/find() 반환값 null 가능성 — 런타임에 항상 존재 보장
+        -
+            identifier: property.nonObject
+            path: tests/*
+        -
+            identifier: method.nonObject
+            path: tests/*
+        # Pest expect() 제네릭 타입 추론 한계
+        -
+            identifier: argument.templateType
+            path: tests/*
+
+rules:
+    - Tools\PHPStan\Rules\NoConfigDefaultRule
+    - Tools\PHPStan\Rules\KoreanTestNameRule
+    - Tools\PHPStan\Rules\NoRawEnvAccessRule
+
+services:
+    -
+        class: Tools\PHPStan\Rules\MaxFileLinesRule
+        arguments:
+            maxLines: 300
+        tags: [phpstan.rules.rule]
+    -
+        class: Tools\PHPStan\Rules\SingleInvokeOnlyRule
+        arguments:
+            enforcedNamespacePrefixes:
+                - App\Actions\
+                - App\Http\Controllers\
+                - App\Jobs\
+                - App\Listeners\
+        tags: [phpstan.rules.rule]
