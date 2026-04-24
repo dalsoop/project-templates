@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bridge-of-gaya-renpy-tools"
+version = "0.1.0"
+description = "Command bridge and config tooling for the Bridge of Gaya Ren'Py project."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "jsonargparse[signatures]>=4.35.0",
+    "openai>=1.35.0",
+    "PyYAML>=6.0.2",
+]
+
+[project.scripts]
+gaya-bridge = "tools.bridge_cli.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["tools*"]
+

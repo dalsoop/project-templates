@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+
+if [[ -x "$ROOT/.venv/bin/gaya-bridge" ]]; then
+  exec "$ROOT/.venv/bin/gaya-bridge" "$@"
+fi
+
+exec python3 -m tools.bridge_cli "$@"
+

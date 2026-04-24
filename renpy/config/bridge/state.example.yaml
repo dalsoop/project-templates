@@ -1,0 +1,15 @@
+state:
+  day: 1
+  period: morning
+  location: 가야와 지내는 임시 거처
+  money: 45000
+  hunger: 35
+  stamina: 70
+  sanity: 62
+  gaya_affection: 1
+  gaya_trust: 0
+  gaya_dependency: 0
+  dream_readiness: 0
+  discovered_clues: []
+  active_flags: []
+

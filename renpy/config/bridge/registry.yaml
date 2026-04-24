@@ -1,0 +1,73 @@
+version: 1
+default_provider: stub
+default_model: gpt-4.1-mini
+
+runtime:
+  output_dir: runtime/output
+  prompt_dump_dir: runtime/prompts
+
+commands:
+  generate_scene:
+    summary: Generate a playable scene payload for Ren'Py.
+    output_schema: scene_payload_v1
+    max_output_tokens: 1600
+    system_role: |
+      You are the narrative systems layer for a Korean mystery romance life sim.
+      Produce a grounded scene payload that supports money pressure, bodily needs,
+      relationship management, and the split between reality and dream-hunting.
+      Keep the tone emotionally precise. Respect the current state. Never output
+      prose outside the requested JSON object.
+    prompt_goals:
+      - Keep the scene playable in Ren'Py with a small set of lines and choices.
+      - Every choice should touch at least one gameplay axis such as money, hunger, stamina, sanity, or relationship values.
+      - Preserve tension around Gaya's death five days later.
+      - Reality scenes should feel domestic, economic, and intimate.
+      - Dream scenes should feel dangerous but still feed back into the reality loop.
+    required_state:
+      - day
+      - period
+      - location
+      - money
+      - hunger
+      - stamina
+      - sanity
+      - gaya_affection
+      - gaya_trust
+      - gaya_dependency
+
+  summarize_day:
+    summary: Summarize the day into a compact state update for save logs or recap UI.
+    output_schema: day_summary_v1
+    max_output_tokens: 900
+    system_role: |
+      You summarize a day of play into structured data.
+      Keep summaries short, factual, and useful for recap screens.
+    prompt_goals:
+      - Highlight changes in money, needs, and Gaya relationship values.
+      - Mention whether dream pressure increased or decreased.
+    required_state:
+      - day
+      - money
+      - hunger
+      - stamina
+      - sanity
+
+  dream_encounter:
+    summary: Generate a dream-side encounter payload for hunter combat scenes.
+    output_schema: dream_encounter_v1
+    max_output_tokens: 1400
+    system_role: |
+      You design short dream encounters for a hunter-themed mystery romance.
+      Keep encounters symbolic, dangerous, and linked to Gaya's future death.
+      Output only JSON.
+    prompt_goals:
+      - Link the enemy or hazard to an emotional memory from reality.
+      - Introduce one concrete clue or symbolic clue.
+      - Keep the encounter compact enough for a single Ren'Py scene.
+    required_state:
+      - day
+      - period
+      - location
+      - sanity
+      - dream_readiness
+

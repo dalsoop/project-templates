@@ -1,0 +1,16 @@
+game/cache/
+game/saves/
+game/**/*.rpyc
+game/**/*.rpyb
+game/**/*.bak
+*.zip
+log.txt
+errors.txt
+traceback.txt
+.venv/
+__pycache__/
+*.egg-info/
+runtime/output/*
+!runtime/output/.gitkeep
+runtime/prompts/*
+!runtime/prompts/.gitkeep
